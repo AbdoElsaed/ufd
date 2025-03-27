@@ -13,7 +13,7 @@ import {
 } from "./ui/select";
 import { Label } from "./ui/label";
 import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
-import { Icons } from "./ui/icons";
+import { Icons } from "./icons";
 import { ChangeEvent } from "react";
 import { cn } from "@/lib/utils";
 

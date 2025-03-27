@@ -6,11 +6,13 @@ import {
   type LucideIcon,
   Instagram,
 } from "lucide-react"
-import { RedditIcon, TiktokIcon } from "./custom-icons"
+import { RedditIcon, TiktokIcon } from "./ui/custom-icons"
 
 export type IconKeys = "youtube" | "facebook" | "twitter" | "reddit" | "spinner" | "tiktok" | "instagram"
 
-export const Icons: Record<IconKeys, any> = {
+type IconType = LucideIcon | React.FC<{ className?: string }>
+
+export const Icons: Record<IconKeys, IconType> = {
   youtube: Youtube,
   facebook: Facebook,
   twitter: Twitter,
