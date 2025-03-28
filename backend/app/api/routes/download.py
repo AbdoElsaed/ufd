@@ -42,7 +42,55 @@ def sanitize_filename(filename: str) -> str:
 )
 async def get_video_info(request: DownloadRequest):
     try:
-        return await downloader.get_video_info(str(request.url))
+        logger.info(
+            f"Getting video info for URL: {request.url} (Platform: {request.platform})"
+        )
+        return await downloader.get_video_info(str(request.url), request.platform)
+    except yt_dlp.utils.DownloadError as e:
+        error_msg = str(e)
+        logger.error(f"yt-dlp download error: {error_msg}")
+
+        # YouTube specific errors
+        if "This content isn't available" in error_msg:
+            if "age-restricted" in error_msg.lower():
+                raise HTTPException(
+                    status_code=403,
+                    detail="This video is age-restricted. Please ensure you are logged into YouTube in Chrome.",
+                )
+            elif "private video" in error_msg.lower():
+                raise HTTPException(
+                    status_code=403,
+                    detail="This video is private and cannot be accessed.",
+                )
+            elif "in your country" in error_msg.lower():
+                raise HTTPException(
+                    status_code=451,
+                    detail="This video is not available in your region. Try using a VPN.",
+                )
+            elif "members-only" in error_msg.lower():
+                raise HTTPException(
+                    status_code=403,
+                    detail="This video is only available to channel members.",
+                )
+            elif "has been removed" in error_msg.lower():
+                raise HTTPException(
+                    status_code=410, detail="This video has been removed or deleted."
+                )
+            else:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Video not found or is not publicly available. If this is a YouTube video, try logging into YouTube in Chrome.",
+                )
+        elif "Account authentication" in error_msg:
+            platform_name = request.platform.value.capitalize()
+            raise HTTPException(
+                status_code=401,
+                detail=f"Authentication required. Please ensure you are logged into {platform_name} in Chrome browser.",
+            )
+        else:
+            raise HTTPException(
+                status_code=500, detail=f"Failed to get video information: {error_msg}"
+            )
     except Exception as e:
         logger.error(f"Error getting video info: {str(e)}")
         raise HTTPException(
@@ -58,7 +106,7 @@ async def get_video_info(request: DownloadRequest):
 async def start_download(request: DownloadRequest):
     try:
         # Get video info first for the title
-        info = await downloader.get_video_info(str(request.url))
+        info = await downloader.get_video_info(str(request.url), request.platform)
 
         # Prepare format string
         if request.format == "audio":
@@ -83,34 +131,78 @@ async def start_download(request: DownloadRequest):
         async def stream_download():
             cmd = [
                 "yt-dlp",
-                "-f", format_string,
-                "--merge-output-format", "mp4",
-                "--format-sort", "ext:mp4:m4a",
+                "-f",
+                format_string,
+                "--merge-output-format",
+                "mp4",
+                "--format-sort",
+                "ext:mp4:m4a",
                 "--format-sort-force",
+                "--cookies-from-browser",
+                "chrome",
             ]
 
-            # Add Instagram-specific options if it's an Instagram URL
-            if request.platform == Platform.INSTAGRAM:
-                cmd.extend([
-                    "--cookies-from-browser", "chrome",
+            # Add platform-specific options
+            if request.platform == Platform.YOUTUBE:
+                cmd.extend(
+                    [
+                        "--extractor-args",
+                        "youtube:player_client=android",
+                        "--extractor-args",
+                        "youtube:player_skip=webpage,configs",
+                    ]
+                )
+
+            # Add common headers
+            cmd.extend(
+                [
                     "--add-header",
-                    "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-                ])
+                    f"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+                    "--add-header",
+                    "Accept: */*",
+                    "--add-header",
+                    "Accept-Encoding: gzip, deflate, br",
+                    "--add-header",
+                    "Accept-Language: en-US,en;q=0.9",
+                ]
+            )
+
+            # Add platform-specific headers
+            platform_origins = {
+                Platform.YOUTUBE: "https://www.youtube.com",
+                Platform.INSTAGRAM: "https://www.instagram.com",
+                Platform.REDDIT: "https://www.reddit.com",
+                Platform.FACEBOOK: "https://www.facebook.com",
+                Platform.TWITTER: "https://twitter.com",
+                Platform.TIKTOK: "https://www.tiktok.com",
+            }
+
+            if request.platform in platform_origins:
+                origin = platform_origins[request.platform]
+                cmd.extend(
+                    [
+                        "--add-header",
+                        f"Origin: {origin}",
+                        "--add-header",
+                        f"Referer: {origin}/",
+                    ]
+                )
 
             # Stream directly to stdout
-            cmd.extend([
-                "-o", "-",  # Output to stdout
-                "--no-playlist",
-                "--no-warnings",
-                "--no-check-certificate",
-                str(request.url)
-            ])
+            cmd.extend(
+                [
+                    "-o",
+                    "-",  # Output to stdout
+                    "--no-playlist",
+                    "--no-warnings",
+                    "--no-check-certificate",
+                    str(request.url),
+                ]
+            )
 
             try:
                 process = await asyncio.create_subprocess_exec(
-                    *cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
+                    *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
                 )
 
                 while True:
@@ -124,9 +216,13 @@ async def start_download(request: DownloadRequest):
                 await process.wait()
 
                 if process.returncode != 0:
-                    error_msg = stderr.decode() if stderr else "Unknown error during download"
+                    error_msg = (
+                        stderr.decode() if stderr else "Unknown error during download"
+                    )
                     logger.error(f"yt-dlp error: {error_msg}")
-                    raise HTTPException(status_code=500, detail=f"Download failed: {error_msg}")
+                    raise HTTPException(
+                        status_code=500, detail=f"Download failed: {error_msg}"
+                    )
 
             except Exception as e:
                 logger.error(f"Streaming error: {str(e)}")
@@ -148,14 +244,11 @@ async def start_download(request: DownloadRequest):
         logger.info(f"Starting stream with headers: {headers}")
 
         return StreamingResponse(
-            stream_download(),
-            headers=headers,
-            media_type=content_type
+            stream_download(), headers=headers, media_type=content_type
         )
 
     except Exception as e:
         logger.error(f"Error starting download: {str(e)}")
         raise HTTPException(
-            status_code=500,
-            detail=f"Failed to start download: {str(e)}"
+            status_code=500, detail=f"Failed to start download: {str(e)}"
         )

@@ -162,7 +162,17 @@ const platformHandlers: Record<Platform, PlatformHandler> = {
 };
 
 export class DownloadService {
-  private readonly API_BASE = "/api/download";
+  private readonly API_BASE: string;
+
+  constructor() {
+    // Get the API URL from environment variables
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+    if (!apiUrl) {
+      throw new Error('API URL not configured. Please set NEXT_PUBLIC_API_URL environment variable.');
+    }
+    this.API_BASE = `${apiUrl}/download`;
+    console.log('API Base URL:', this.API_BASE);
+  }
 
   detectPlatform(url: string): Platform | null {
     if (!url) return null;
@@ -173,7 +183,7 @@ export class DownloadService {
 
       // Check each platform handler
       for (const [platform, handler] of Object.entries(platformHandlers)) {
-        if (handler.validateUrl(url)) {  // Pass the full URL instead of just hostname
+        if (handler.validateUrl(url)) {
           return platform as Platform;
         }
       }
@@ -203,6 +213,7 @@ export class DownloadService {
     const handler = platformHandlers[request.platform];
     const cleanedUrl = handler.cleanUrl(request.url);
 
+    console.log('Getting video info from:', `${this.API_BASE}/info`);
     const response = await fetch(`${this.API_BASE}/info`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -225,6 +236,7 @@ export class DownloadService {
     const cleanedUrl = handler.cleanUrl(request.url);
 
     console.log('Starting download with cleaned URL:', cleanedUrl);
+    console.log('Download endpoint:', `${this.API_BASE}/start`);
 
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();

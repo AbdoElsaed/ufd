@@ -119,12 +119,19 @@ Once the backend is running, you can access the API documentation at:
 ```
 API_V1_STR=/api/v1
 PROJECT_NAME=UFD Backend
-CORS_ORIGINS=["http://localhost:3000"]
+CORS_ORIGINS=["http://localhost:3000", "https://your-frontend-domain.com"]
+MAX_CONCURRENT_DOWNLOADS=2
 ```
 
-### Frontend (.env.local)
+### Frontend
+Development (.env.development):
 ```
 NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+```
+
+Production (.env.production):
+```
+NEXT_PUBLIC_API_URL=https://ufd-backend.onrender.com/api/v1
 ```
 
 ## Contributing
