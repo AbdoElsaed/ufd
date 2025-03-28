@@ -27,6 +27,13 @@ class DownloaderService:
         base_opts = {
             "quiet": True,
             "no_warnings": True,
+            "force_ipv4": True,
+            "extract_flat": False,
+            "no_check_certificate": True,
+            "prefer_insecure": True,  # Try HTTP if HTTPS fails
+            "geo_bypass": True,
+            "geo_bypass_country": "US",
+            "socket_timeout": 30,
         }
 
         # Add Instagram-specific options if it's an Instagram URL
@@ -40,6 +47,17 @@ class DownloaderService:
                     ("Accept-Language", "en-US,en;q=0.9"),
                     ("Origin", "https://www.instagram.com"),
                     ("Referer", "https://www.instagram.com/"),
+                ]
+            })
+        elif "youtube.com" in url.lower() or "youtu.be" in url.lower():
+            base_opts.update({
+                "add_header": [
+                    ("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"),
+                    ("Accept", "*/*"),
+                    ("Accept-Encoding", "gzip, deflate, br"),
+                    ("Accept-Language", "en-US,en;q=0.9"),
+                    ("Origin", "https://www.youtube.com"),
+                    ("Referer", "https://www.youtube.com/"),
                 ]
             })
 
