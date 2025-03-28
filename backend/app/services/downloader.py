@@ -4,6 +4,7 @@ import asyncio
 from pathlib import Path
 import json
 import logging
+import os
 from ..core.config import get_settings
 from ..schemas.download import (
     DownloadRequest,
@@ -23,6 +24,7 @@ class DownloaderService:
     def __init__(self):
         self._download_semaphore = asyncio.Semaphore(settings.MAX_CONCURRENT_DOWNLOADS)
         self._active_downloads: Dict[str, Any] = {}
+        self._is_production = os.getenv("RENDER", "false").lower() == "true"
 
     def _get_platform_options(self, url: str, platform: Platform) -> dict:
         """Get platform-specific options for yt-dlp"""
@@ -36,9 +38,12 @@ class DownloaderService:
             "geo_bypass": True,
             "geo_bypass_country": "US",
             "socket_timeout": 30,
-            "cookiesfrombrowser": ("chrome",),  # Always try to get cookies from Chrome
             "verbose": True,  # Add verbose logging
         }
+
+        # Only try to use Chrome cookies in development environment
+        if not self._is_production:
+            base_opts["cookiesfrombrowser"] = ("chrome",)
 
         # Common headers
         common_headers = [
@@ -60,14 +65,13 @@ class DownloaderService:
                 ],
                 "extractor_args": {
                     "youtube": {
-                        "player_client": ["android", "web"],  # Try both android and web
-                        "player_skip": ["configs"],  # Don't skip webpage for age verification
-                        "max_comments": ["0"],  # Skip comments to reduce load
+                        "player_client": ["android", "web"],
+                        "player_skip": ["configs"],
                     }
                 },
-                "age_limit": 25,  # Allow age-restricted content
-                "write_pages": True,  # For debugging
-                "no_playlist": True,  # Avoid playlist confusion
+                "age_limit": 25,
+                "write_pages": True,
+                "no_playlist": True,
             },
             Platform.INSTAGRAM: {
                 "add_header": [
@@ -109,6 +113,18 @@ class DownloaderService:
         # Update base options with platform-specific settings
         if platform in platform_configs:
             base_opts.update(platform_configs[platform])
+
+        # Add extra YouTube options for production environment
+        if self._is_production and platform == Platform.YOUTUBE:
+            base_opts.update({
+                "extractor_args": {
+                    "youtube": {
+                        "player_client": ["android", "web", "mobile"],
+                        "player_skip": [],  # Don't skip anything in production
+                        "max_comments": ["0"],
+                    }
+                },
+            })
 
         return base_opts
 

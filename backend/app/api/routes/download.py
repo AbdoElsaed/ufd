@@ -19,6 +19,7 @@ from typing import AsyncGenerator
 from pathlib import Path
 import time
 import aiofiles
+import os
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -131,41 +132,39 @@ async def start_download(request: DownloadRequest):
         async def stream_download():
             cmd = [
                 "yt-dlp",
-                "-f",
-                format_string,
-                "--merge-output-format",
-                "mp4",
-                "--format-sort",
-                "ext:mp4:m4a",
+                "-f", format_string,
+                "--merge-output-format", "mp4",
+                "--format-sort", "ext:mp4:m4a",
                 "--format-sort-force",
-                "--cookies-from-browser",
-                "chrome",
             ]
+
+            # Only use Chrome cookies in development
+            if not os.getenv("RENDER", "false").lower() == "true":
+                cmd.extend(["--cookies-from-browser", "chrome"])
 
             # Add platform-specific options
             if request.platform == Platform.YOUTUBE:
-                cmd.extend(
-                    [
-                        "--extractor-args",
-                        "youtube:player_client=android",
-                        "--extractor-args",
-                        "youtube:player_skip=webpage,configs",
-                    ]
-                )
+                if os.getenv("RENDER", "false").lower() == "true":
+                    # Production YouTube options
+                    cmd.extend([
+                        "--extractor-args", "youtube:player_client=android,web,mobile",
+                        "--no-check-certificate",
+                        "--force-ipv4",
+                    ])
+                else:
+                    # Development YouTube options
+                    cmd.extend([
+                        "--extractor-args", "youtube:player_client=android",
+                        "--extractor-args", "youtube:player_skip=webpage,configs",
+                    ])
 
             # Add common headers
-            cmd.extend(
-                [
-                    "--add-header",
-                    f"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-                    "--add-header",
-                    "Accept: */*",
-                    "--add-header",
-                    "Accept-Encoding: gzip, deflate, br",
-                    "--add-header",
-                    "Accept-Language: en-US,en;q=0.9",
-                ]
-            )
+            cmd.extend([
+                "--add-header", f"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+                "--add-header", "Accept: */*",
+                "--add-header", "Accept-Encoding: gzip, deflate, br",
+                "--add-header", "Accept-Language: en-US,en;q=0.9",
+            ])
 
             # Add platform-specific headers
             platform_origins = {
@@ -179,30 +178,25 @@ async def start_download(request: DownloadRequest):
 
             if request.platform in platform_origins:
                 origin = platform_origins[request.platform]
-                cmd.extend(
-                    [
-                        "--add-header",
-                        f"Origin: {origin}",
-                        "--add-header",
-                        f"Referer: {origin}/",
-                    ]
-                )
+                cmd.extend([
+                    "--add-header", f"Origin: {origin}",
+                    "--add-header", f"Referer: {origin}/",
+                ])
 
             # Stream directly to stdout
-            cmd.extend(
-                [
-                    "-o",
-                    "-",  # Output to stdout
-                    "--no-playlist",
-                    "--no-warnings",
-                    "--no-check-certificate",
-                    str(request.url),
-                ]
-            )
+            cmd.extend([
+                "-o", "-",  # Output to stdout
+                "--no-playlist",
+                "--no-warnings",
+                "--no-check-certificate",
+                str(request.url)
+            ])
 
             try:
                 process = await asyncio.create_subprocess_exec(
-                    *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
                 )
 
                 while True:
@@ -216,13 +210,9 @@ async def start_download(request: DownloadRequest):
                 await process.wait()
 
                 if process.returncode != 0:
-                    error_msg = (
-                        stderr.decode() if stderr else "Unknown error during download"
-                    )
+                    error_msg = stderr.decode() if stderr else "Unknown error during download"
                     logger.error(f"yt-dlp error: {error_msg}")
-                    raise HTTPException(
-                        status_code=500, detail=f"Download failed: {error_msg}"
-                    )
+                    raise HTTPException(status_code=500, detail=f"Download failed: {error_msg}")
 
             except Exception as e:
                 logger.error(f"Streaming error: {str(e)}")
