@@ -1,4 +1,4 @@
-import DownloadForm from "@/components/download-form";
+import { DownloadForm } from "@/components/download-form";
 
 export default function Home() {
   return (

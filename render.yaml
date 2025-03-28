@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: ufd-backend
+    env: docker
+    dockerfilePath: ./backend/Dockerfile
+    region: oregon  # Choose your preferred region
+    plan: free
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: API_V1_STR
+        value: /api/v1
+      - key: PROJECT_NAME
+        value: UFD Backend
+      - key: CORS_ORIGINS
+        value: '["https://your-frontend-domain.com"]'  # Update this with your frontend domain
+      - key: MAX_CONCURRENT_DOWNLOADS
+        value: 2  # Reduced for free tier resources
+    scaling:
+      minInstances: 0  # Allows scaling to zero when inactive
+      maxInstances: 1  # Free tier limitation 
