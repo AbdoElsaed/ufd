@@ -161,6 +161,19 @@ const platformHandlers: Record<Platform, PlatformHandler> = {
   },
 };
 
+interface PlatformCookies {
+  [key: string]: string[];
+}
+
+const PLATFORM_COOKIES: PlatformCookies = {
+  youtube: ['LOGIN_INFO', 'CONSENT', 'VISITOR_INFO1_LIVE', 'YSC', 'PREF', 'SID', 'HSID', 'SSID', 'APISID', 'SAPISID'],
+  facebook: ['c_user', 'xs', 'fr', 'datr', 'sb'],
+  twitter: ['auth_token', 'ct0', 'twid', '_twitter_sess'],
+  instagram: ['sessionid', 'ds_user_id', 'csrftoken', 'ig_did', 'mid'],
+  reddit: ['reddit_session', 'token', 'csrf_token'],
+  tiktok: ['sessionid', 'tt_webid', 'tt_webid_v2', 'sid_tt']
+};
+
 export class DownloadService {
   private readonly API_BASE: string;
 
@@ -172,6 +185,29 @@ export class DownloadService {
     }
     this.API_BASE = `${apiUrl}/download`;
     console.log('API Base URL:', this.API_BASE);
+  }
+
+  // Updated method to get platform-specific cookies
+  private async getPlatformCookies(platform: Platform): Promise<string> {
+    try {
+      const cookieNames = PLATFORM_COOKIES[platform.toLowerCase()];
+      if (!cookieNames) return '';
+
+      const cookies = document.cookie
+        .split(';')
+        .map(cookie => cookie.trim())
+        .filter(cookie => {
+          const cookieName = cookie.split('=')[0];
+          return cookieNames.some(name => cookieName.startsWith(name));
+        })
+        .join('; ');
+
+      console.log(`Got ${platform} cookies:`, cookies ? 'Found' : 'None');
+      return cookies;
+    } catch (error) {
+      console.warn(`Failed to get ${platform} cookies:`, error);
+      return '';
+    }
   }
 
   detectPlatform(url: string): Platform | null {
@@ -212,11 +248,15 @@ export class DownloadService {
   async getVideoInfo(request: DownloadRequest): Promise<VideoInfo> {
     const handler = platformHandlers[request.platform];
     const cleanedUrl = handler.cleanUrl(request.url);
+    const cookies = await this.getPlatformCookies(request.platform);
 
     console.log('Getting video info from:', `${this.API_BASE}/info`);
     const response = await fetch(`${this.API_BASE}/info`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(cookies && { [`X-${request.platform}-Cookies`]: cookies })
+      },
       body: JSON.stringify({ ...request, url: cleanedUrl }),
     });
 
@@ -234,6 +274,7 @@ export class DownloadService {
   ): Promise<{ blob: Blob; filename: string }> {
     const handler = platformHandlers[request.platform];
     const cleanedUrl = handler.cleanUrl(request.url);
+    const cookies = await this.getPlatformCookies(request.platform);
 
     console.log('Starting download with cleaned URL:', cleanedUrl);
     console.log('Download endpoint:', `${this.API_BASE}/start`);
@@ -243,6 +284,9 @@ export class DownloadService {
       xhr.open('POST', `${this.API_BASE}/start`, true);
       xhr.responseType = 'blob';
       xhr.setRequestHeader('Content-Type', 'application/json');
+      if (cookies) {
+        xhr.setRequestHeader(`X-${request.platform}-Cookies`, cookies);
+      }
       xhr.timeout = 3600000; // 1 hour timeout
 
       // Setup progress handler with throttling

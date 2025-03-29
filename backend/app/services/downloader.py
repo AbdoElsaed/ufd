@@ -5,6 +5,7 @@ from pathlib import Path
 import json
 import logging
 import os
+import tempfile
 from ..core.config import get_settings
 from ..schemas.download import (
     DownloadRequest,
@@ -25,9 +26,66 @@ class DownloaderService:
         self._download_semaphore = asyncio.Semaphore(settings.MAX_CONCURRENT_DOWNLOADS)
         self._active_downloads: Dict[str, Any] = {}
         self._is_production = os.getenv("RENDER", "false").lower() == "true"
+        self._temp_dir = Path(tempfile.gettempdir()) / "ufd_cookies"
+        self._temp_dir.mkdir(parents=True, exist_ok=True)
 
-    def _get_platform_options(self, url: str, platform: Platform) -> dict:
+    def _create_temp_cookie_file(
+        self, platform: Platform, cookies: str
+    ) -> Optional[str]:
+        """Create a temporary cookie file for the given platform"""
+        if not cookies:
+            return None
+
+        try:
+            # Create a unique temporary file for this request
+            cookie_file = (
+                self._temp_dir / f"{platform.lower()}_{os.urandom(8).hex()}.txt"
+            )
+
+            # Write cookies in Netscape format
+            with open(cookie_file, "w") as f:
+                f.write("# Netscape HTTP Cookie File\n")
+                for cookie in cookies.split("; "):
+                    if "=" in cookie:
+                        name, value = cookie.split("=", 1)
+                        # Write in Netscape format: domain flag path secure expiry name value
+                        domain = {
+                            Platform.YOUTUBE: ".youtube.com",
+                            Platform.FACEBOOK: ".facebook.com",
+                            Platform.TWITTER: ".twitter.com",
+                            Platform.INSTAGRAM: ".instagram.com",
+                            Platform.REDDIT: ".reddit.com",
+                            Platform.TIKTOK: ".tiktok.com",
+                        }.get(platform, "")
+
+                        f.write(
+                            f"{domain}\tTRUE\t/\tFALSE\t{int(2147483647)}\t{name}\t{value}\n"
+                        )
+
+            logger.info(f"Created temporary cookie file for {platform}: {cookie_file}")
+            return str(cookie_file)
+        except Exception as e:
+            logger.error(f"Error creating cookie file for {platform}: {e}")
+            return None
+
+    def _cleanup_temp_cookie_file(self, cookie_file: Optional[str]):
+        """Clean up temporary cookie file"""
+        if cookie_file and Path(cookie_file).exists():
+            try:
+                Path(cookie_file).unlink()
+                logger.info(f"Cleaned up temporary cookie file: {cookie_file}")
+            except Exception as e:
+                logger.error(f"Error cleaning up cookie file {cookie_file}: {e}")
+
+    def _get_platform_options(
+        self, url: str, platform: Platform, cookies: Optional[str] = None
+    ) -> dict:
         """Get platform-specific options for yt-dlp"""
+        # Create temporary cookie file if cookies are provided
+        cookie_file = (
+            self._create_temp_cookie_file(platform, cookies) if cookies else None
+        )
+
         base_opts = {
             "quiet": True,
             "no_warnings": True,
@@ -49,18 +107,8 @@ class DownloaderService:
         }
 
         # Cookie handling strategy
-        if platform == Platform.YOUTUBE:
-            # Try multiple cookie sources in order of preference
-            cookies_file = os.path.join(os.getcwd(), "youtube.cookies")
-            cookies_txt = os.path.join(os.getcwd(), "cookies.txt")
-
-            if os.path.exists(cookies_file):
-                base_opts["cookiefile"] = cookies_file
-            elif os.path.exists(cookies_txt):
-                base_opts["cookiefile"] = cookies_txt
-            elif not self._is_production:
-                # Only try browser cookies in development
-                base_opts["cookiesfrombrowser"] = ("chrome",)
+        if platform == Platform.YOUTUBE and cookies:
+            base_opts["cookiefile"] = cookies
 
         # Mobile-first user agents for better acceptance rate
         mobile_agents = [
@@ -105,7 +153,6 @@ class DownloaderService:
                         "player_skip": [],
                         "max_comments": ["0"],
                         "innertube_client": ["android", "web"],
-                        "innertube_key": ["AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"],
                     }
                 },
                 "age_limit": 25,
@@ -238,144 +285,149 @@ class DownloaderService:
         base_opts.update({"format": format_str, "merge_output_format": "mp4"})
         return base_opts
 
-    async def get_video_info(self, url: str, platform: Platform) -> VideoInfo:
-        if platform != Platform.YOUTUBE:
-            return await self._get_video_info_base(url, platform)
+    async def get_video_info(
+        self, url: str, platform: Platform, cookies: Optional[str] = None
+    ) -> VideoInfo:
+        cookie_file = None
+        try:
+            if platform != Platform.YOUTUBE:
+                return await self._get_video_info_base(url, platform, cookies)
 
-        # YouTube-specific retry logic with different configurations
-        errors = []
+            # YouTube-specific retry logic with different configurations
+            errors = []
 
-        # Different user agents to try
-        user_agents = [
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1",
-            "Mozilla/5.0 (Linux; Android 11; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Mobile Safari/537.36",
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-        ]
+            # Different user agents to try
+            user_agents = [
+                "Mozilla/5.0 (Linux; Android 11; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Mobile Safari/537.36",
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+            ]
 
-        # Different configurations to try
-        configs = [
-            {"player_client": ["android", "web"], "player_skip": []},
-            {"player_client": ["mweb", "tv_embedded"], "player_skip": []},
-            {"player_client": ["ios", "mweb"], "player_skip": []},
-            {"player_client": ["web"], "player_skip": ["webpage", "configs"]},
-        ]
+            # Create temporary cookie file if cookies are provided
+            cookie_file = (
+                self._create_temp_cookie_file(platform, cookies) if cookies else None
+            )
 
-        for user_agent in user_agents:
-            for config in configs:
-                try:
-                    # Get platform-specific options
-                    ydl_opts = self._get_platform_options(url, platform)
+            # Different configurations to try
+            configs = [
+                {"player_client": ["android", "web"], "player_skip": []},
+                {"player_client": ["mweb", "tv_embedded"], "player_skip": []},
+                {"player_client": ["ios", "mweb"], "player_skip": []},
+                {"player_client": ["web"], "player_skip": ["webpage", "configs"]},
+            ]
 
-                    # Update user agent
-                    ydl_opts["add_header"] = [
-                        h
-                        for h in ydl_opts["add_header"]
-                        if not h[0].lower() == "user-agent"
-                    ]
-                    ydl_opts["add_header"].append(("User-Agent", user_agent))
+            for user_agent in user_agents:
+                for config in configs:
+                    try:
+                        # Get platform-specific options
+                        ydl_opts = self._get_platform_options(url, platform, cookies)
 
-                    # Update extractor args
-                    ydl_opts["extractor_args"]["youtube"].update(config)
+                        # Update user agent
+                        ydl_opts["add_header"] = [
+                            h
+                            for h in ydl_opts["add_header"]
+                            if not h[0].lower() == "user-agent"
+                        ]
+                        ydl_opts["add_header"].append(("User-Agent", user_agent))
 
-                    # Add innertube client
-                    ydl_opts["extractor_args"]["youtube"].update(
-                        {
-                            "innertube_client": ["web", "android"],
-                        }
-                    )
+                        # Update extractor args
+                        ydl_opts["extractor_args"]["youtube"].update(config)
 
-                    logger.info(
-                        f"Trying YouTube download with config: {config} and user agent: {user_agent}"
-                    )
-
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                        info = await asyncio.to_thread(
-                            ydl.extract_info, url, download=False
+                        logger.info(
+                            f"Trying {platform} download with config: {config} and user agent: {user_agent}"
                         )
 
-                        formats = []
-                        for f in info.get("formats", []):
-                            if f.get("vcodec") != "none" or f.get("acodec") != "none":
-                                format_type = (
-                                    "video" if f.get("vcodec") != "none" else "audio"
-                                )
-                                formats.append(
-                                    VideoFormat(
-                                        quality=f.get("height"),
-                                        format=format_type,
-                                        size=f.get("filesize")
-                                        or f.get("filesize_approx"),
-                                    )
-                                )
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            info = await asyncio.to_thread(
+                                ydl.extract_info, url, download=False
+                            )
 
-                        # Remove duplicates and sort by quality
-                        unique_formats = {}
-                        for f in formats:
-                            quality_key = f.quality
-                            if quality_key not in unique_formats:
-                                unique_formats[quality_key] = f
-
-                        return VideoInfo(
-                            title=info.get("title", ""),
-                            thumbnail=info.get("thumbnail"),
-                            duration=info.get("duration"),
-                            formats=list(unique_formats.values()),
+                            formats = self._process_formats(info)
+                            return VideoInfo(
+                                title=info.get("title", ""),
+                                thumbnail=info.get("thumbnail"),
+                                duration=info.get("duration"),
+                                formats=formats,
+                            )
+                    except Exception as e:
+                        logger.warning(
+                            f"Attempt failed with user agent {user_agent} and config {config}: {str(e)}"
                         )
-                except Exception as e:
-                    logger.warning(
-                        f"Attempt failed with user agent {user_agent} and config {config}: {str(e)}"
+                        errors.append(str(e))
+                        continue
+
+            # If all attempts failed, raise the last error
+            raise Exception(
+                f"All download attempts failed. Errors: {'; '.join(errors)}"
+            )
+        finally:
+            # Clean up temporary cookie file
+            self._cleanup_temp_cookie_file(cookie_file)
+
+    def _process_formats(self, info: dict) -> list[VideoFormat]:
+        """Process and deduplicate video formats"""
+        formats = []
+        for f in info.get("formats", []):
+            if f.get("vcodec") != "none" or f.get("acodec") != "none":
+                format_type = "video" if f.get("vcodec") != "none" else "audio"
+                formats.append(
+                    VideoFormat(
+                        quality=f.get("height"),
+                        format=format_type,
+                        size=f.get("filesize") or f.get("filesize_approx"),
                     )
-                    errors.append(str(e))
-                    continue
+                )
 
-        # If all attempts failed, raise the last error
-        raise Exception(f"All download attempts failed. Errors: {'; '.join(errors)}")
+        # Remove duplicates and sort by quality
+        unique_formats = {}
+        for f in formats:
+            quality_key = f.quality
+            if quality_key not in unique_formats:
+                unique_formats[quality_key] = f
 
-    async def _get_video_info_base(self, url: str, platform: Platform) -> VideoInfo:
+        return list(unique_formats.values())
+
+    async def _get_video_info_base(
+        self, url: str, platform: Platform, cookies: Optional[str] = None
+    ) -> VideoInfo:
         """Base implementation of get_video_info for non-YouTube platforms"""
+        cookie_file = None
         try:
             # Get platform-specific options
-            ydl_opts = self._get_platform_options(url, platform)
+            ydl_opts = self._get_platform_options(url, platform, cookies)
             logger.info(f"Getting video info with options: {ydl_opts}")
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = await asyncio.to_thread(ydl.extract_info, url, download=False)
-
-                formats = []
-                for f in info.get("formats", []):
-                    if f.get("vcodec") != "none" or f.get("acodec") != "none":
-                        format_type = "video" if f.get("vcodec") != "none" else "audio"
-                        formats.append(
-                            VideoFormat(
-                                quality=f.get("height"),
-                                format=format_type,
-                                size=f.get("filesize") or f.get("filesize_approx"),
-                            )
-                        )
-
-                # Remove duplicates and sort by quality
-                unique_formats = {}
-                for f in formats:
-                    quality_key = f.quality
-                    if quality_key not in unique_formats:
-                        unique_formats[quality_key] = f
-
                 return VideoInfo(
                     title=info.get("title", ""),
                     thumbnail=info.get("thumbnail"),
                     duration=info.get("duration"),
-                    formats=list(unique_formats.values()),
+                    formats=self._process_formats(info),
                 )
         except Exception as e:
             logger.error(f"Error extracting video info: {str(e)}")
             raise
+        finally:
+            # Clean up temporary cookie file
+            self._cleanup_temp_cookie_file(cookie_file)
 
     async def start_download(self, request: DownloadRequest) -> DownloadResponse:
+        cookie_file = None
         async with self._download_semaphore:
             try:
                 # Get basic info first
-                info = await self.get_video_info(str(request.url), request.platform)
+                info = await self.get_video_info(
+                    str(request.url), request.platform, request.cookies
+                )
+
+                # Create temporary cookie file if cookies are provided
+                cookie_file = (
+                    self._create_temp_cookie_file(request.platform, request.cookies)
+                    if request.cookies
+                    else None
+                )
 
                 # Prepare options with URL-specific settings
                 ydl_opts = {
@@ -411,6 +463,9 @@ class DownloaderService:
             except Exception as e:
                 logger.error(f"Download error: {str(e)}")
                 raise
+            finally:
+                # Clean up temporary cookie file
+                self._cleanup_temp_cookie_file(cookie_file)
 
 
 # Create a singleton instance

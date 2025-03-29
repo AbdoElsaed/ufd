@@ -26,6 +26,8 @@ ENV/
 backend/temp/
 backend/downloads/
 backend/cookies/
+backend/cookies.txt
+backend/youtube.cookies
 
 # Frontend
 # dependencies

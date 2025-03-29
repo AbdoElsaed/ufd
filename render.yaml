@@ -21,8 +21,6 @@ services:
         value: 5
       - key: YDL_SLEEP_INTERVAL_REQUESTS
         value: 3
-      - key: YOUTUBE_AUTH_TOKEN
-        sync: false  # This will be set manually in Render dashboard
     scaling:
       minInstances: 0  # Allows scaling to zero when inactive
       maxInstances: 1  # Free tier limitation 

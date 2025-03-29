@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Header
 from ...schemas.download import (
     DownloadRequest,
     DownloadResponse,
@@ -15,7 +15,7 @@ import re
 from fastapi.responses import StreamingResponse
 import subprocess
 import sys
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 from pathlib import Path
 import time
 import aiofiles
@@ -35,18 +35,54 @@ def sanitize_filename(filename: str) -> str:
     return sanitized if sanitized else "download"
 
 
+async def get_youtube_cookies(x_youtube_cookies: Optional[str] = Header(None)) -> Optional[str]:
+    """Get YouTube cookies from request header"""
+    return x_youtube_cookies
+
+
 @router.post(
     "/info",
     response_model=VideoInfo,
     responses={400: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
     description="Get video information without downloading",
 )
-async def get_video_info(request: DownloadRequest):
+async def get_video_info(
+    request: DownloadRequest, 
+    youtube_cookies: Optional[str] = Depends(get_youtube_cookies)
+):
     try:
-        logger.info(
-            f"Getting video info for URL: {request.url} (Platform: {request.platform})"
-        )
-        return await downloader.get_video_info(str(request.url), request.platform)
+        logger.info(f"Getting video info for URL: {request.url} (Platform: {request.platform})")
+        
+        # Create temporary cookie file if cookies provided
+        cookies_file = None
+        if youtube_cookies and request.platform == Platform.YOUTUBE:
+            cookies_file = Path(settings.TEMP_DIR) / f"cookies_{int(time.time())}.txt"
+            async with aiofiles.open(cookies_file, 'w') as f:
+                await f.write("# Netscape HTTP Cookie File\n")
+                await f.write("# https://curl.haxx.se/rfc/cookie_spec.html\n")
+                await f.write("# This is a generated file!  Do not edit.\n\n")
+                
+                # Parse and write each cookie
+                for cookie in youtube_cookies.split(';'):
+                    cookie = cookie.strip()
+                    if '=' in cookie:
+                        name, value = cookie.split('=', 1)
+                        await f.write(f".youtube.com\tTRUE\t/\tTRUE\t2147483647\t{name}\t{value}\n")
+            
+            # Set correct permissions
+            cookies_file.chmod(0o644)
+
+        try:
+            return await downloader.get_video_info(
+                str(request.url), 
+                request.platform,
+                cookies_file=str(cookies_file) if cookies_file else None
+            )
+        finally:
+            # Cleanup temporary cookie file
+            if cookies_file and cookies_file.exists():
+                cookies_file.unlink()
+
     except yt_dlp.utils.DownloadError as e:
         error_msg = str(e)
         logger.error(f"yt-dlp download error: {error_msg}")
@@ -104,155 +140,186 @@ async def get_video_info(request: DownloadRequest):
     responses={400: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
     description="Stream download directly to client",
 )
-async def start_download(request: DownloadRequest):
+async def start_download(
+    request: DownloadRequest,
+    youtube_cookies: Optional[str] = Depends(get_youtube_cookies)
+):
     try:
-        # Get video info first for the title
-        info = await downloader.get_video_info(str(request.url), request.platform)
-
-        # Prepare format string
-        if request.format == "audio":
-            format_string = "bestaudio[ext=m4a]/bestaudio"
-            content_type = "audio/mp4"
-            ext = "m4a"
-        else:
-            if request.quality == "highest":
-                format_string = "bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/best[ext=mp4]/best"
-            else:
-                height = request.quality.replace("p", "")
-                format_string = f"bestvideo[height<={height}][ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/best[height<={height}][ext=mp4]/best"
-            content_type = "video/mp4"
-            ext = "mp4"
-
-        # Generate safe filename
-        safe_title = sanitize_filename(info.title)
-        filename = f"{safe_title}.{ext}"
-
-        logger.info(f"Starting download: {filename} with format: {format_string}")
-
-        async def stream_download():
-            cmd = [
-                "yt-dlp",
-                "-f", format_string,
-                "--merge-output-format", "mp4",
-                "--format-sort", "ext:mp4:m4a",
-                "--format-sort-force",
-                "--retries", "10",
-                "--fragment-retries", "10",
-                "--file-access-retries", "10",
-                "--no-warnings",
-                "--no-check-certificate",
-                "--force-ipv4",
-                "--geo-bypass",
-            ]
-
-            # Cookie handling for YouTube
-            if request.platform == Platform.YOUTUBE:
-                cookies_file = os.path.join(os.getcwd(), "youtube.cookies")
-                cookies_txt = os.path.join(os.getcwd(), "cookies.txt")
+        # Create temporary cookie file if cookies provided
+        cookies_file = None
+        if youtube_cookies and request.platform == Platform.YOUTUBE:
+            cookies_file = Path(settings.TEMP_DIR) / f"cookies_{int(time.time())}.txt"
+            async with aiofiles.open(cookies_file, 'w') as f:
+                await f.write("# Netscape HTTP Cookie File\n")
+                await f.write("# https://curl.haxx.se/rfc/cookie_spec.html\n")
+                await f.write("# This is a generated file!  Do not edit.\n\n")
                 
-                if os.path.exists(cookies_file):
-                    cmd.extend(["--cookies", cookies_file])
-                elif os.path.exists(cookies_txt):
-                    cmd.extend(["--cookies", cookies_txt])
-                elif not os.getenv("RENDER", "false").lower() == "true":
-                    cmd.extend(["--cookies-from-browser", "chrome"])
+                # Parse and write each cookie
+                for cookie in youtube_cookies.split(';'):
+                    cookie = cookie.strip()
+                    if '=' in cookie:
+                        name, value = cookie.split('=', 1)
+                        await f.write(f".youtube.com\tTRUE\t/\tTRUE\t2147483647\t{name}\t{value}\n")
+            
+            # Set correct permissions
+            cookies_file.chmod(0o644)
 
-                # YouTube-specific options
+        try:
+            # Get video info first for the title
+            info = await downloader.get_video_info(
+                str(request.url), 
+                request.platform,
+                cookies_file=str(cookies_file) if cookies_file else None
+            )
+
+            # Prepare format string
+            if request.format == "audio":
+                format_string = "bestaudio[ext=m4a]/bestaudio"
+                content_type = "audio/mp4"
+                ext = "m4a"
+            else:
+                if request.quality == "highest":
+                    format_string = "bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+                else:
+                    height = request.quality.replace("p", "")
+                    format_string = f"bestvideo[height<={height}][ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/best[height<={height}][ext=mp4]/best"
+                content_type = "video/mp4"
+                ext = "mp4"
+
+            # Generate safe filename
+            safe_title = sanitize_filename(info.title)
+            filename = f"{safe_title}.{ext}"
+
+            logger.info(f"Starting download: {filename} with format: {format_string}")
+
+            async def stream_download():
+                cmd = [
+                    "yt-dlp",
+                    "-f", format_string,
+                    "--merge-output-format", "mp4",
+                    "--format-sort", "ext:mp4:m4a",
+                    "--format-sort-force",
+                    "--retries", "10",
+                    "--fragment-retries", "10",
+                    "--file-access-retries", "10",
+                    "--no-warnings",
+                    "--no-check-certificate",
+                    "--force-ipv4",
+                    "--geo-bypass",
+                ]
+
+                # Cookie handling for YouTube
+                if request.platform == Platform.YOUTUBE:
+                    cookies_file = os.path.join(os.getcwd(), "youtube.cookies")
+                    cookies_txt = os.path.join(os.getcwd(), "cookies.txt")
+                    
+                    if os.path.exists(cookies_file):
+                        cmd.extend(["--cookies", cookies_file])
+                    elif os.path.exists(cookies_txt):
+                        cmd.extend(["--cookies", cookies_txt])
+                    elif not os.getenv("RENDER", "false").lower() == "true":
+                        cmd.extend(["--cookies-from-browser", "chrome"])
+
+                    # YouTube-specific options
+                    cmd.extend([
+                        "--extractor-args", 
+                        "youtube:player_client=android,web,mweb",
+                        "--sleep-interval", "5",
+                        "--max-sleep-interval", "10",
+                        "--sleep-requests", "3",
+                    ])
+
+                    # Add mobile user agent for YouTube
+                    cmd.extend([
+                        "--add-header",
+                        "User-Agent: Mozilla/5.0 (Linux; Android 11; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Mobile Safari/537.36",
+                        "--add-header",
+                        "Origin: https://m.youtube.com",
+                        "--add-header",
+                        "Referer: https://m.youtube.com/"
+                    ])
+
+                # Common headers
                 cmd.extend([
-                    "--extractor-args", 
-                    "youtube:player_client=android,web,mweb",
-                    "--sleep-interval", "5",
-                    "--max-sleep-interval", "10",
-                    "--sleep-requests", "3",
+                    "--add-header", "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    "--add-header", "Accept-Language: en-US,en;q=0.5",
+                    "--add-header", "Accept-Encoding: gzip, deflate, br",
                 ])
 
-                # Add mobile user agent for YouTube
+                # Add platform-specific headers
+                platform_origins = {
+                    Platform.YOUTUBE: "https://m.youtube.com",  # Use mobile YouTube
+                    Platform.INSTAGRAM: "https://www.instagram.com",
+                    Platform.REDDIT: "https://www.reddit.com",
+                    Platform.FACEBOOK: "https://www.facebook.com",
+                    Platform.TWITTER: "https://twitter.com",
+                    Platform.TIKTOK: "https://www.tiktok.com",
+                }
+
+                if request.platform in platform_origins:
+                    origin = platform_origins[request.platform]
+                    cmd.extend([
+                        "--add-header", f"Origin: {origin}",
+                        "--add-header", f"Referer: {origin}/",
+                    ])
+
+                # Stream directly to stdout
                 cmd.extend([
-                    "--add-header",
-                    "User-Agent: Mozilla/5.0 (Linux; Android 11; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Mobile Safari/537.36",
-                    "--add-header",
-                    "Origin: https://m.youtube.com",
-                    "--add-header",
-                    "Referer: https://m.youtube.com/"
+                    "-o", "-",
+                    "--no-playlist",
+                    str(request.url)
                 ])
 
-            # Common headers
-            cmd.extend([
-                "--add-header", "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "--add-header", "Accept-Language: en-US,en;q=0.5",
-                "--add-header", "Accept-Encoding: gzip, deflate, br",
-            ])
+                logger.info(f"Running command: {' '.join(cmd)}")
 
-            # Add platform-specific headers
-            platform_origins = {
-                Platform.YOUTUBE: "https://m.youtube.com",  # Use mobile YouTube
-                Platform.INSTAGRAM: "https://www.instagram.com",
-                Platform.REDDIT: "https://www.reddit.com",
-                Platform.FACEBOOK: "https://www.facebook.com",
-                Platform.TWITTER: "https://twitter.com",
-                Platform.TIKTOK: "https://www.tiktok.com",
+                try:
+                    process = await asyncio.create_subprocess_exec(
+                        *cmd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE
+                    )
+
+                    while True:
+                        chunk = await process.stdout.read(8192)
+                        if not chunk:
+                            break
+                        yield chunk
+
+                    # Check for errors after streaming is complete
+                    stderr = await process.stderr.read()
+                    await process.wait()
+
+                    if process.returncode != 0:
+                        error_msg = stderr.decode() if stderr else "Unknown error during download"
+                        logger.error(f"yt-dlp error: {error_msg}")
+                        raise HTTPException(status_code=500, detail=f"Download failed: {error_msg}")
+
+                except Exception as e:
+                    logger.error(f"Streaming error: {str(e)}")
+                    if process:
+                        try:
+                            process.kill()
+                        except:
+                            pass
+                    raise
+
+            headers = {
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Content-Type": content_type,
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
             }
 
-            if request.platform in platform_origins:
-                origin = platform_origins[request.platform]
-                cmd.extend([
-                    "--add-header", f"Origin: {origin}",
-                    "--add-header", f"Referer: {origin}/",
-                ])
+            logger.info(f"Starting stream with headers: {headers}")
 
-            # Stream directly to stdout
-            cmd.extend([
-                "-o", "-",
-                "--no-playlist",
-                str(request.url)
-            ])
-
-            logger.info(f"Running command: {' '.join(cmd)}")
-
-            try:
-                process = await asyncio.create_subprocess_exec(
-                    *cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
-                )
-
-                while True:
-                    chunk = await process.stdout.read(8192)
-                    if not chunk:
-                        break
-                    yield chunk
-
-                # Check for errors after streaming is complete
-                stderr = await process.stderr.read()
-                await process.wait()
-
-                if process.returncode != 0:
-                    error_msg = stderr.decode() if stderr else "Unknown error during download"
-                    logger.error(f"yt-dlp error: {error_msg}")
-                    raise HTTPException(status_code=500, detail=f"Download failed: {error_msg}")
-
-            except Exception as e:
-                logger.error(f"Streaming error: {str(e)}")
-                if process:
-                    try:
-                        process.kill()
-                    except:
-                        pass
-                raise
-
-        headers = {
-            "Content-Disposition": f'attachment; filename="{filename}"',
-            "Content-Type": content_type,
-            "Cache-Control": "no-cache, no-store, must-revalidate",
-            "Pragma": "no-cache",
-            "Expires": "0",
-        }
-
-        logger.info(f"Starting stream with headers: {headers}")
-
-        return StreamingResponse(
-            stream_download(), headers=headers, media_type=content_type
-        )
+            return StreamingResponse(
+                stream_download(), headers=headers, media_type=content_type
+            )
+        finally:
+            # Cleanup temporary cookie file
+            if cookies_file and cookies_file.exists():
+                cookies_file.unlink()
 
     except Exception as e:
         logger.error(f"Error starting download: {str(e)}")
