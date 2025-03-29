@@ -25,6 +25,7 @@ venv/
 ENV/
 backend/temp/
 backend/downloads/
+backend/cookies/
 
 # Frontend
 # dependencies

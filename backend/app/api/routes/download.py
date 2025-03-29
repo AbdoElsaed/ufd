@@ -136,39 +136,56 @@ async def start_download(request: DownloadRequest):
                 "--merge-output-format", "mp4",
                 "--format-sort", "ext:mp4:m4a",
                 "--format-sort-force",
+                "--retries", "10",
+                "--fragment-retries", "10",
+                "--file-access-retries", "10",
+                "--no-warnings",
+                "--no-check-certificate",
+                "--force-ipv4",
+                "--geo-bypass",
             ]
 
-            # Only use Chrome cookies in development
-            if not os.getenv("RENDER", "false").lower() == "true":
-                cmd.extend(["--cookies-from-browser", "chrome"])
-
-            # Add platform-specific options
+            # Cookie handling for YouTube
             if request.platform == Platform.YOUTUBE:
-                if os.getenv("RENDER", "false").lower() == "true":
-                    # Production YouTube options
-                    cmd.extend([
-                        "--extractor-args", "youtube:player_client=android,web,mobile",
-                        "--no-check-certificate",
-                        "--force-ipv4",
-                    ])
-                else:
-                    # Development YouTube options
-                    cmd.extend([
-                        "--extractor-args", "youtube:player_client=android",
-                        "--extractor-args", "youtube:player_skip=webpage,configs",
-                    ])
+                cookies_file = os.path.join(os.getcwd(), "youtube.cookies")
+                cookies_txt = os.path.join(os.getcwd(), "cookies.txt")
+                
+                if os.path.exists(cookies_file):
+                    cmd.extend(["--cookies", cookies_file])
+                elif os.path.exists(cookies_txt):
+                    cmd.extend(["--cookies", cookies_txt])
+                elif not os.getenv("RENDER", "false").lower() == "true":
+                    cmd.extend(["--cookies-from-browser", "chrome"])
 
-            # Add common headers
+                # YouTube-specific options
+                cmd.extend([
+                    "--extractor-args", 
+                    "youtube:player_client=android,web,mweb",
+                    "--sleep-interval", "5",
+                    "--max-sleep-interval", "10",
+                    "--sleep-requests", "3",
+                ])
+
+                # Add mobile user agent for YouTube
+                cmd.extend([
+                    "--add-header",
+                    "User-Agent: Mozilla/5.0 (Linux; Android 11; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Mobile Safari/537.36",
+                    "--add-header",
+                    "Origin: https://m.youtube.com",
+                    "--add-header",
+                    "Referer: https://m.youtube.com/"
+                ])
+
+            # Common headers
             cmd.extend([
-                "--add-header", f"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-                "--add-header", "Accept: */*",
+                "--add-header", "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "--add-header", "Accept-Language: en-US,en;q=0.5",
                 "--add-header", "Accept-Encoding: gzip, deflate, br",
-                "--add-header", "Accept-Language: en-US,en;q=0.9",
             ])
 
             # Add platform-specific headers
             platform_origins = {
-                Platform.YOUTUBE: "https://www.youtube.com",
+                Platform.YOUTUBE: "https://m.youtube.com",  # Use mobile YouTube
                 Platform.INSTAGRAM: "https://www.instagram.com",
                 Platform.REDDIT: "https://www.reddit.com",
                 Platform.FACEBOOK: "https://www.facebook.com",
@@ -185,12 +202,12 @@ async def start_download(request: DownloadRequest):
 
             # Stream directly to stdout
             cmd.extend([
-                "-o", "-",  # Output to stdout
+                "-o", "-",
                 "--no-playlist",
-                "--no-warnings",
-                "--no-check-certificate",
                 str(request.url)
             ])
+
+            logger.info(f"Running command: {' '.join(cmd)}")
 
             try:
                 process = await asyncio.create_subprocess_exec(
