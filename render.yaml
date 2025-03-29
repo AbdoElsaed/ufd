@@ -15,6 +15,14 @@ services:
         value: '["https://your-frontend-domain.com"]'  # Update this with your frontend domain
       - key: MAX_CONCURRENT_DOWNLOADS
         value: 2  # Reduced for free tier resources
+      - key: YDL_SLEEP_INTERVAL
+        value: 2
+      - key: YDL_MAX_SLEEP_INTERVAL
+        value: 5
+      - key: YDL_SLEEP_INTERVAL_REQUESTS
+        value: 3
+      - key: YOUTUBE_AUTH_TOKEN
+        sync: false  # This will be set manually in Render dashboard
     scaling:
       minInstances: 0  # Allows scaling to zero when inactive
       maxInstances: 1  # Free tier limitation 

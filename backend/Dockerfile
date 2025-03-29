@@ -44,6 +44,12 @@ ENV YDL_RECODE_VIDEO_FORMAT=mp4
 ENV YDL_NO_WARNINGS=1
 ENV YDL_FORCE_IPV4=1
 ENV RENDER=true
+ENV YDL_SLEEP_INTERVAL=2
+ENV YDL_MAX_SLEEP_INTERVAL=5
+ENV YDL_SLEEP_INTERVAL_REQUESTS=3
+
+# Optional YouTube authentication token (to be set in deployment)
+ENV YOUTUBE_AUTH_TOKEN=""
 
 # Command to run the application
 CMD ["./run.sh"] 

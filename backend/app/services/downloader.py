@@ -45,15 +45,23 @@ class DownloaderService:
         if not self._is_production:
             base_opts["cookiesfrombrowser"] = ("chrome",)
 
-        # Common headers
+        # Common headers for a more browser-like request
         common_headers = [
             (
                 "User-Agent",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
             ),
-            ("Accept", "*/*"),
+            ("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"),
+            ("Accept-Language", "en-US,en;q=0.5"),
             ("Accept-Encoding", "gzip, deflate, br"),
-            ("Accept-Language", "en-US,en;q=0.9"),
+            ("DNT", "1"),
+            ("Connection", "keep-alive"),
+            ("Upgrade-Insecure-Requests", "1"),
+            ("Sec-Fetch-Dest", "document"),
+            ("Sec-Fetch-Mode", "navigate"),
+            ("Sec-Fetch-Site", "none"),
+            ("Sec-Fetch-User", "?1"),
+            ("TE", "trailers"),
         ]
 
         platform_configs = {
@@ -119,12 +127,29 @@ class DownloaderService:
             base_opts.update({
                 "extractor_args": {
                     "youtube": {
-                        "player_client": ["android", "web", "mobile"],
+                        "player_client": ["android", "web", "mobile", "tv_embedded"],
                         "player_skip": [],  # Don't skip anything in production
                         "max_comments": ["0"],
                     }
                 },
+                # Add more YouTube-specific options for production
+                "ap_mso": "",  # Empty MSO provider
+                "ap_url": "",  # Empty URL
+                "youtube_include_dash_manifest": True,  # Include DASH manifests
+                "youtube_include_hls_manifest": True,  # Include HLS manifests
+                "no_check_certificates": True,
+                "prefer_insecure": True,
+                "sleep_interval": 2,  # Add small delay between requests
+                "max_sleep_interval": 5,
+                "sleep_interval_requests": 3,
             })
+
+            # Try to use environment variable for YouTube authentication if available
+            youtube_auth = os.getenv("YOUTUBE_AUTH_TOKEN")
+            if youtube_auth:
+                base_opts["add_header"].extend([
+                    ("Authorization", f"Bearer {youtube_auth}"),
+                ])
 
         return base_opts
 
