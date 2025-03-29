@@ -41,17 +41,25 @@ class DownloaderService:
             "verbose": True,  # Add verbose logging
         }
 
-        # Only try to use Chrome cookies in development environment
-        if not self._is_production:
+        # Check for cookies file in production
+        if self._is_production:
+            cookies_file = os.path.join(os.getcwd(), "youtube.cookies")
+            if os.path.exists(cookies_file):
+                base_opts["cookiefile"] = cookies_file
+        else:
+            # Only try to use Chrome cookies in development environment
             base_opts["cookiesfrombrowser"] = ("chrome",)
 
         # Common headers for a more browser-like request
         common_headers = [
             (
                 "User-Agent",
-                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
             ),
-            ("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"),
+            (
+                "Accept",
+                "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            ),
             ("Accept-Language", "en-US,en;q=0.5"),
             ("Accept-Encoding", "gzip, deflate, br"),
             ("DNT", "1"),
@@ -70,16 +78,29 @@ class DownloaderService:
                     *common_headers,
                     ("Origin", "https://www.youtube.com"),
                     ("Referer", "https://www.youtube.com/"),
+                    ("X-YouTube-Client-Name", "1"),
+                    ("X-YouTube-Client-Version", "2.20240304.01.00"),
                 ],
                 "extractor_args": {
                     "youtube": {
-                        "player_client": ["android", "web"],
-                        "player_skip": ["configs"],
+                        "player_client": ["web", "android", "ios", "mweb"],
+                        "player_skip": [],
+                        "max_comments": ["0"],
                     }
                 },
                 "age_limit": 25,
-                "write_pages": True,
+                "write_pages": False,
                 "no_playlist": True,
+                "extract_flat": False,
+                "youtube_include_dash_manifest": True,
+                "youtube_include_hls_manifest": True,
+                "no_check_certificates": True,
+                "prefer_insecure": True,
+                "sleep_interval": int(os.getenv("YDL_SLEEP_INTERVAL", "2")),
+                "max_sleep_interval": int(os.getenv("YDL_MAX_SLEEP_INTERVAL", "5")),
+                "sleep_interval_requests": int(
+                    os.getenv("YDL_SLEEP_INTERVAL_REQUESTS", "3")
+                ),
             },
             Platform.INSTAGRAM: {
                 "add_header": [
@@ -124,32 +145,41 @@ class DownloaderService:
 
         # Add extra YouTube options for production environment
         if self._is_production and platform == Platform.YOUTUBE:
-            base_opts.update({
-                "extractor_args": {
-                    "youtube": {
-                        "player_client": ["android", "web", "mobile", "tv_embedded"],
-                        "player_skip": [],  # Don't skip anything in production
-                        "max_comments": ["0"],
-                    }
-                },
-                # Add more YouTube-specific options for production
-                "ap_mso": "",  # Empty MSO provider
-                "ap_url": "",  # Empty URL
-                "youtube_include_dash_manifest": True,  # Include DASH manifests
-                "youtube_include_hls_manifest": True,  # Include HLS manifests
-                "no_check_certificates": True,
-                "prefer_insecure": True,
-                "sleep_interval": 2,  # Add small delay between requests
-                "max_sleep_interval": 5,
-                "sleep_interval_requests": 3,
-            })
+            base_opts.update(
+                {
+                    "extractor_args": {
+                        "youtube": {
+                            "player_client": [
+                                "android",
+                                "web",
+                                "mobile",
+                                "tv_embedded",
+                            ],
+                            "player_skip": [],  # Don't skip anything in production
+                            "max_comments": ["0"],
+                        }
+                    },
+                    # Add more YouTube-specific options for production
+                    "ap_mso": "",  # Empty MSO provider
+                    "ap_url": "",  # Empty URL
+                    "youtube_include_dash_manifest": True,  # Include DASH manifests
+                    "youtube_include_hls_manifest": True,  # Include HLS manifests
+                    "no_check_certificates": True,
+                    "prefer_insecure": True,
+                    "sleep_interval": 2,  # Add small delay between requests
+                    "max_sleep_interval": 5,
+                    "sleep_interval_requests": 3,
+                }
+            )
 
             # Try to use environment variable for YouTube authentication if available
             youtube_auth = os.getenv("YOUTUBE_AUTH_TOKEN")
             if youtube_auth:
-                base_opts["add_header"].extend([
-                    ("Authorization", f"Bearer {youtube_auth}"),
-                ])
+                base_opts["add_header"].extend(
+                    [
+                        ("Authorization", f"Bearer {youtube_auth}"),
+                    ]
+                )
 
         return base_opts
 
