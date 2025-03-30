@@ -14,7 +14,7 @@ services:
       - key: PROJECT_NAME
         value: UFD Backend
       - key: CORS_ORIGINS
-        value: '["https://ufd-kappa.vercel.app", "http://localhost:3000"]'
+        value: https://ufd-kappa.vercel.app,http://localhost:3000
       - key: MAX_CONCURRENT_DOWNLOADS
         value: 2  # Reduced for free tier resources
       - key: YDL_SLEEP_INTERVAL
