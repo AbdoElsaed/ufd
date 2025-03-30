@@ -36,7 +36,8 @@ COPY . .
 RUN chmod +x run.sh
 
 # Expose port
-EXPOSE 8000
+ENV PORT=8000
+EXPOSE ${PORT}
 
 # Set environment variables for yt-dlp
 ENV YDL_EXTRACT_AUDIO_FORMAT=mp3
