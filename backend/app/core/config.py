@@ -6,7 +6,7 @@ from pathlib import Path
 class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     PROJECT_NAME: str = "UFD Backend"
-    CORS_ORIGINS: list[str] = ["http://localhost:3000"]
+    CORS_ORIGINS: list[str] = ["https://ufd-kappa.vercel.app", "http://localhost:3000"]
     DOWNLOAD_DIR: str = "downloads"
     MAX_CONCURRENT_DOWNLOADS: int = 5
     TEMP_DIR: str = "temp"
