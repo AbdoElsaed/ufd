@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
+from app.api.routes import download
 import logging
 
 # Configure logging
@@ -21,6 +22,11 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+# Include routers
+app.include_router(
+    download.router, prefix=f"{settings.API_V1_STR}/download", tags=["download"]
 )
 
 
