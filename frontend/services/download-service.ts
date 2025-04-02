@@ -165,8 +165,24 @@ interface PlatformCookies {
   [key: string]: string[];
 }
 
+// Cookie names to extract for each platform
 const PLATFORM_COOKIES: PlatformCookies = {
-  youtube: ['LOGIN_INFO', 'CONSENT', 'VISITOR_INFO1_LIVE', 'YSC', 'PREF', 'SID', 'HSID', 'SSID', 'APISID', 'SAPISID'],
+  youtube: [
+    'LOGIN_INFO',
+    'CONSENT',
+    'VISITOR_INFO1_LIVE',
+    'YSC',
+    'PREF',
+    'SID',
+    'HSID',
+    'SSID',
+    'APISID',
+    'SAPISID',
+    '__Secure-1PSID',
+    '__Secure-3PSID',
+    '__Secure-1PAPISID',
+    '__Secure-3PAPISID',
+  ],
   facebook: ['c_user', 'xs', 'fr', 'datr', 'sb'],
   twitter: ['auth_token', 'ct0', 'twid', '_twitter_sess'],
   instagram: ['sessionid', 'ds_user_id', 'csrftoken', 'ig_did', 'mid'],
@@ -178,16 +194,14 @@ export class DownloadService {
   private readonly API_BASE: string;
 
   constructor() {
-    // Get the API URL from environment variables
     const apiUrl = process.env.NEXT_PUBLIC_API_URL;
     if (!apiUrl) {
-      throw new Error('API URL not configured. Please set NEXT_PUBLIC_API_URL environment variable.');
+      throw new Error('API URL not configured');
     }
     this.API_BASE = `${apiUrl}/download`;
     console.log('API Base URL:', this.API_BASE);
   }
 
-  // Updated method to get platform-specific cookies
   private async getPlatformCookies(platform: Platform): Promise<string> {
     try {
       const cookieNames = PLATFORM_COOKIES[platform.toLowerCase()];
@@ -198,7 +212,12 @@ export class DownloadService {
         .map(cookie => cookie.trim())
         .filter(cookie => {
           const cookieName = cookie.split('=')[0];
-          return cookieNames.some(name => cookieName.startsWith(name));
+          return cookieNames.some(name => 
+            cookieName === name || 
+            cookieName.startsWith(`${name}=`) || 
+            cookieName.startsWith(`__Secure-${name}=`) || 
+            cookieName.startsWith(`__Host-${name}=`)
+          );
         })
         .join('; ');
 
@@ -214,18 +233,9 @@ export class DownloadService {
     if (!url) return null;
 
     try {
-      // Try to validate the URL first
       const urlObj = new URL(url);
-
-      // Check each platform handler
-      for (const [platform, handler] of Object.entries(platformHandlers)) {
-        if (handler.validateUrl(url)) {
-          return platform as Platform;
-        }
-      }
-
-      // If no handler matched, try a simpler domain check
       const hostname = urlObj.hostname.toLowerCase();
+
       if (hostname.includes("youtube.com") || hostname.includes("youtu.be")) {
         return Platform.YOUTUBE;
       } else if (hostname.includes("facebook.com") || hostname.includes("fb.watch")) {
@@ -246,18 +256,21 @@ export class DownloadService {
   }
 
   async getVideoInfo(request: DownloadRequest): Promise<VideoInfo> {
-    const handler = platformHandlers[request.platform];
-    const cleanedUrl = handler.cleanUrl(request.url);
     const cookies = await this.getPlatformCookies(request.platform);
+    
+    const headers: HeadersInit = {
+      "Content-Type": "application/json",
+    };
+
+    if (cookies) {
+      headers["X-Platform-Cookies"] = cookies;
+    }
 
     console.log('Getting video info from:', `${this.API_BASE}/info`);
     const response = await fetch(`${this.API_BASE}/info`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(cookies && { [`X-${request.platform}-Cookies`]: cookies })
-      },
-      body: JSON.stringify({ ...request, url: cleanedUrl }),
+      headers,
+      body: JSON.stringify(request),
     });
 
     if (!response.ok) {
@@ -272,89 +285,56 @@ export class DownloadService {
     request: DownloadRequest,
     onProgress?: (progress: number) => void
   ): Promise<{ blob: Blob; filename: string }> {
-    const handler = platformHandlers[request.platform];
-    const cleanedUrl = handler.cleanUrl(request.url);
     const cookies = await this.getPlatformCookies(request.platform);
-
-    console.log('Starting download with cleaned URL:', cleanedUrl);
-    console.log('Download endpoint:', `${this.API_BASE}/start`);
 
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', `${this.API_BASE}/start`, true);
       xhr.responseType = 'blob';
       xhr.setRequestHeader('Content-Type', 'application/json');
+      
       if (cookies) {
-        xhr.setRequestHeader(`X-${request.platform}-Cookies`, cookies);
+        xhr.setRequestHeader('X-Platform-Cookies', cookies);
       }
+
       xhr.timeout = 3600000; // 1 hour timeout
 
-      // Setup progress handler with throttling
+      // Progress handling with throttling
       let lastProgressUpdate = 0;
       xhr.onprogress = (event) => {
         const now = Date.now();
-        // Only update progress every 100ms to avoid too frequent updates
         if (now - lastProgressUpdate > 100 && onProgress) {
           if (event.lengthComputable) {
             const percentComplete = (event.loaded / event.total) * 100;
             onProgress(Math.min(99, percentComplete));
-            console.log(`Download progress: ${percentComplete.toFixed(2)}%`);
           } else {
-            // If length is not computable, use a simple counter based on bytes
             const megabytesLoaded = event.loaded / (1024 * 1024);
-            const progress = Math.min(99, megabytesLoaded * 2); // Assume ~2% per MB
+            const progress = Math.min(99, megabytesLoaded * 2);
             onProgress(progress);
-            console.log(`Downloaded: ${megabytesLoaded.toFixed(2)}MB`);
           }
           lastProgressUpdate = now;
         }
       };
 
-      // Handle successful completion
       xhr.onload = () => {
         if (xhr.status === 200) {
           const blob = xhr.response;
-          console.log('Download complete, blob:', {
-            size: blob.size,
-            type: blob.type
-          });
-
-          // Get filename from Content-Disposition header
           const contentDisposition = xhr.getResponseHeader('content-disposition');
-          console.log('Content-Disposition:', contentDisposition);
           const filenameMatch = contentDisposition?.match(/filename="(.+?)"/);
           const filename = filenameMatch ? filenameMatch[1] : "download.mp4";
 
           if (onProgress) onProgress(100);
           resolve({ blob, filename });
         } else {
-          console.error('Download failed with status:', xhr.status);
           reject(new Error(`Download failed with status: ${xhr.status}`));
         }
       };
 
-      // Handle errors
-      xhr.onerror = () => {
-        console.error('Download failed');
-        reject(new Error('Download failed'));
-      };
+      xhr.onerror = () => reject(new Error('Download failed'));
+      xhr.ontimeout = () => reject(new Error('Download timed out'));
+      xhr.onabort = () => reject(new Error('Download aborted'));
 
-      // Handle timeout
-      xhr.ontimeout = () => {
-        console.error('Download timed out');
-        reject(new Error('Download timed out'));
-      };
-
-      // Handle abort
-      xhr.onabort = () => {
-        console.error('Download aborted');
-        reject(new Error('Download aborted'));
-      };
-
-      // Send the request
-      const body = JSON.stringify({ ...request, url: cleanedUrl });
-      console.log('Sending request with body:', body);
-      xhr.send(body);
+      xhr.send(JSON.stringify(request));
     });
   }
 }
