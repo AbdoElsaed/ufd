@@ -23,9 +23,6 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Update yt-dlp to latest version
-RUN yt-dlp -U
-
 # Create necessary directories
 RUN mkdir -p downloads temp
 
