@@ -212,10 +212,10 @@ export class DownloadService {
         .map(cookie => cookie.trim())
         .filter(cookie => {
           const cookieName = cookie.split('=')[0];
-          return cookieNames.some(name => 
-            cookieName === name || 
-            cookieName.startsWith(`${name}=`) || 
-            cookieName.startsWith(`__Secure-${name}=`) || 
+          return cookieNames.some(name =>
+            cookieName === name ||
+            cookieName.startsWith(`${name}=`) ||
+            cookieName.startsWith(`__Secure-${name}=`) ||
             cookieName.startsWith(`__Host-${name}=`)
           );
         })
@@ -257,7 +257,7 @@ export class DownloadService {
 
   async getVideoInfo(request: DownloadRequest): Promise<VideoInfo> {
     const cookies = await this.getPlatformCookies(request.platform);
-    
+
     const headers: HeadersInit = {
       "Content-Type": "application/json",
     };
@@ -292,7 +292,7 @@ export class DownloadService {
       xhr.open('POST', `${this.API_BASE}/start`, true);
       xhr.responseType = 'blob';
       xhr.setRequestHeader('Content-Type', 'application/json');
-      
+
       if (cookies) {
         xhr.setRequestHeader('X-Platform-Cookies', cookies);
       }
