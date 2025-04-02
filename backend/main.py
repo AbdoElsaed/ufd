@@ -1,7 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
-from app.api.routes import download
 import logging
 
 # Configure logging
@@ -24,13 +23,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
-app.include_router(
-    download.router, prefix=f"{settings.API_V1_STR}/download", tags=["download"]
-)
 
-
-# Move health check under API prefix
+# Health check endpoint
 @app.get(f"{settings.API_V1_STR}/health")
 async def health_check():
     return {"status": "healthy", "service": settings.PROJECT_NAME, "version": "1.0.0"}
