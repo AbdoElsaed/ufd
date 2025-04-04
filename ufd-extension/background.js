@@ -4,110 +4,43 @@ const browser = window.browser || window.chrome;
 // Configuration
 const config = {
   debug: true,
-  apiUrl: {
-    development: "http://localhost:8000/api/v1",
-    production: "https://ufd.onrender.com/api/v1",
-  },
-  // Use production URL as default, but allow switching to development
   get API_URL() {
-    // Check if we should be using the development URL
-    const useDev = localStorage.getItem("ufd_use_dev_backend") === "true";
-    return useDev ? this.apiUrl.development : this.apiUrl.production;
+    const useDevBackend = localStorage.getItem('ufd_use_dev_backend') === 'true';
+    const productionAPI = 'https://ufd.onrender.com/api/v1';
+    const devAPI = 'http://localhost:8000/api/v1';
+    
+    return useDevBackend ? devAPI : productionAPI;
   },
-  // Cookie domains to collect for each platform - more comprehensive for YouTube and Reddit
-  cookieDomains: {
-    youtube: [
-      '.youtube.com', 
-      'youtube.com', 
-      '.google.com', 
-      'google.com',
-      'accounts.google.com',
-      '.accounts.google.com',
-      'www.google.com',
-      '.www.google.com',
-      'www.youtube.com',
-      '.www.youtube.com',
-      'm.youtube.com',
-      '.m.youtube.com',
-      'youtu.be',
-      '.youtu.be',
-      'apis.google.com',
-      '.apis.google.com',
-      'content.googleapis.com',
-      '.content.googleapis.com'
-    ],
-    facebook: ['.facebook.com', 'facebook.com', '.fb.com', 'fb.com', 'www.facebook.com', '.www.facebook.com'],
-    twitter: ['.twitter.com', 'twitter.com', '.x.com', 'x.com', 'www.twitter.com', '.www.twitter.com', 'api.twitter.com', '.api.twitter.com'],
-    instagram: ['.instagram.com', 'instagram.com', '.cdninstagram.com', 'www.instagram.com', '.www.instagram.com'],
-    tiktok: ['.tiktok.com', 'tiktok.com', '.tiktokcdn.com', 'www.tiktok.com', '.www.tiktok.com'],
-    reddit: [
-      '.reddit.com', 
-      'reddit.com', 
-      '.redd.it', 
-      'redd.it',
-      'www.reddit.com', 
-      '.www.reddit.com', 
-      'oauth.reddit.com', 
-      '.oauth.reddit.com',
-      'i.redd.it',
-      '.i.redd.it',
-      'v.redd.it',
-      '.v.redd.it',
-      'old.reddit.com',
-      '.old.reddit.com',
-      'gateway.reddit.com',
-      '.gateway.reddit.com',
-      's.reddit.com',
-      '.s.reddit.com'
-    ]
+  cookies: {
+    cookieDomains: {
+      youtube: ['.youtube.com', '.google.com', 'accounts.google.com', 'www.youtube.com', 'youtube.com', 'google.com', 'm.youtube.com'],
+      facebook: ['.facebook.com', '.fb.com', 'www.facebook.com', 'facebook.com', 'm.facebook.com'],
+      twitter: ['.twitter.com', '.x.com', 'twitter.com', 'www.twitter.com', 'x.com'],
+      instagram: ['.instagram.com', '.cdninstagram.com', 'www.instagram.com', 'instagram.com'],
+      tiktok: ['.tiktok.com', '.tiktokcdn.com', 'www.tiktok.com', 'tiktok.com'],
+      reddit: ['.reddit.com', '.redd.it', 'www.reddit.com', 'reddit.com', 'old.reddit.com']
+    },
+    cookieNames: {
+      youtube: [
+        'SID', 'HSID', 'SSID', 'APISID', 'SAPISID', '__Secure-1PSID', '__Secure-3PSID',
+        'LOGIN_INFO', 'VISITOR_INFO1_LIVE', 'YSC', 'PREF', '__Secure-1PSIDTS', '__Secure-3PSIDTS',
+        '__Secure-3PAPISID', 'SIDCC', '__Secure-1PAPISID', '__Secure-3PSIDCC', 'CONSENT'
+      ],
+      facebook: ['c_user', 'xs', 'fr', 'datr', 'sb', 'spin'],
+      twitter: ['auth_token', 'ct0', 'twid', 'lang'],
+      instagram: ['sessionid', 'ds_user_id', 'csrftoken', 'rur', 'mid'],
+      tiktok: ['sessionid', 'tt_webid', 'tt_webid_v2', 'ttwid', 'msToken'],
+      reddit: ['reddit_session', 'token', 'loid', 'csrf_token', 'session', 'session_tracker']
+    },
+    collectAllCookies: {
+      youtube: true,
+      facebook: true,
+      twitter: true,
+      instagram: true,
+      tiktok: true,
+      reddit: true
+    }
   },
-  // Cookie names to collect for each platform - expanded for YouTube and Reddit
-  cookieNames: {
-    youtube: [
-      // Google account cookies
-      "SID", "HSID", "SSID", "APISID", "SAPISID",
-      "__Secure-1PSID", "__Secure-3PSID", "__Secure-1PAPISID", "__Secure-3PAPISID",
-      "__Secure-1PSIDTS", "__Secure-3PSIDTS", "__Secure-1PSIDCC", "__Secure-3PSIDCC",
-      // YouTube-specific cookies
-      "LOGIN_INFO", "CONSENT", "VISITOR_INFO1_LIVE", "YSC", "PREF",
-      "ST-vq0jfe", "SIDCC", "__Secure-1PSIDCC", "__Secure-3PSIDCC",
-      // Authentication cookies
-      "SOCS", "AUTHENTICATED_USER_ID", "ACCOUNT_CHOOSER", "GAPS",
-      "LSID", "LSOLH", "NID", "OTZ", "AEC", "__Secure-ENID",
-      // Session cookies
-      "wide", "__Secure-YEC",
-      // Any cookie that might be needed - if a name is not specified, we'll collect all cookies
-    ],
-    facebook: ["c_user", "xs", "fr", "datr", "sb", "presence", "wd"],
-    twitter: ["auth_token", "ct0", "twid", "_twitter_sess", "kdt", "guest_id"],
-    instagram: ["sessionid", "ds_user_id", "csrftoken", "ig_did", "mid", "rur"],
-    reddit: [
-      "reddit_session", "token", "csrf_token", "loid", "edgebucket",
-      "session_tracker", "token_v2", "recently_visited", "pc", "ps_l", "ps_c",
-      "reddaid", "eu_cookie", "session", "csv", "USER", "secure_session",
-      "cookies", "logged_in", "token", "t2_*", "recent_srs", "over18"
-    ],
-    tiktok: ["sessionid", "tt_webid", "tt_webid_v2", "sid_tt", "uid_tt"],
-  },
-  // Set to true to collect all cookies, regardless of name filter
-  collectAllCookies: {
-    youtube: true,    // YouTube seems to use many different cookies, so collect all
-    reddit: true,     // Reddit uses many cookies for auth, so collect all
-    facebook: false,
-    twitter: false,
-    instagram: false,
-    tiktok: false
-  },
-  // NEW: Direct download mode will use browser to fetch the page first
-  useDirectMode: {
-    youtube: true,
-    reddit: true,
-    facebook: false,
-    twitter: false,
-    instagram: false,
-    tiktok: false
-  },
-  // User agents to use for requests to make them look more legitimate
   userAgents: {
     desktop: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
     mobile: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
@@ -286,15 +219,15 @@ async function getPlatformCookies(platform) {
     log.debug(`Collecting cookies for platform: ${platform}`);
 
     // If we don't have domain configs for this platform, return null
-    if (!config.cookieDomains[platform]) {
+    if (!config.cookies.cookieDomains[platform]) {
       log.warn(`No cookie domains configured for platform: ${platform}`);
       return null;
     }
 
     let allCookies = [];
-    const domains = config.cookieDomains[platform];
-    const cookieNames = config.cookieNames[platform] || [];
-    const collectAll = config.collectAllCookies[platform] || false;
+    const domains = config.cookies.cookieDomains[platform];
+    const cookieNames = config.cookies.cookieNames[platform] || [];
+    const collectAll = config.cookies.collectAllCookies[platform] || false;
 
     log.debug(`Checking ${domains.length} domains for ${platform} cookies. Collect all: ${collectAll}`);
     
@@ -356,82 +289,64 @@ async function getPlatformCookies(platform) {
   }
 }
 
-// NEW FUNCTION: Direct page access to verify authentication and warm up session
-async function preFetchPageContent(url, platform) {
+// Get basic authentication status based on current tab
+async function getAuthStatus(platform) {
   try {
-    log.info(`Pre-fetching page content for ${platform}: ${url}`);
-    
-    // Only try for supported platforms
-    if (!config.useDirectMode[platform]) {
-      log.debug(`Direct mode not enabled for ${platform}, skipping pre-fetch`);
+    // Get the current tab
+    const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+    if (!tabs || !tabs[0]) {
+      log.warn("No active tab found for auth check");
       return null;
     }
     
-    // Create a new tab but don't switch to it
-    const tab = await browser.tabs.create({
-      url: url,
-      active: false // Keep it in the background
+    // Only perform check if tab is on the relevant domain
+    const url = tabs[0].url;
+    const domainMatch = {
+      youtube: /(youtube\.com|youtu\.be)/i,
+      reddit: /reddit\.com/i,
+      facebook: /(facebook\.com|fb\.watch)/i,
+      twitter: /(twitter\.com|x\.com)/i,
+      instagram: /instagram\.com/i,
+      tiktok: /tiktok\.com/i
+    };
+    
+    if (!domainMatch[platform] || !domainMatch[platform].test(url)) {
+      log.debug(`Current tab (${url}) is not on ${platform} domain, skipping auth check`);
+      return null;
+    }
+    
+    // Execute script to get basic info about authentication status
+    const results = await browser.tabs.executeScript(tabs[0].id, {
+      code: `
+        // Return authentication information
+        (function() {
+          const info = {};
+          
+          if (window.location.host.includes('youtube.com')) {
+            info.isLoggedIn = !!document.querySelector('ytd-masthead #avatar-btn');
+            info.isAgeRestricted = !!document.querySelector('.ytd-player-error-message-renderer');
+            info.title = document.title;
+            info.videoElement = !!document.querySelector('video');
+            info.userAgent = navigator.userAgent;
+          } else if (window.location.host.includes('reddit.com')) {
+            info.isLoggedIn = !!document.querySelector('header [data-testid="reddit-avatar"]');
+            info.title = document.title;
+            info.userAgent = navigator.userAgent;
+          }
+          
+          return info;
+        })();
+      `
     });
     
-    log.debug(`Created background tab with ID: ${tab.id}`);
-    
-    // Wait for the page to load
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    
-    // Execute script to check if we're properly authenticated
-    let authStatus = null;
-    
-    try {
-      const results = await browser.tabs.executeScript(tab.id, {
-        code: `
-          // Return authentication information
-          (function() {
-            const info = {};
-            
-            if (window.location.host.includes('youtube.com')) {
-              info.isLoggedIn = !!document.querySelector('ytd-masthead #avatar-btn');
-              info.isAgeRestricted = !!document.querySelector('.ytd-player-error-message-renderer');
-              info.title = document.title;
-              info.videoElement = !!document.querySelector('video');
-            } else if (window.location.host.includes('reddit.com')) {
-              info.isLoggedIn = !!document.querySelector('header [data-testid="reddit-avatar"]');
-              info.title = document.title;
-            }
-            
-            return info;
-          })();
-        `
-      });
-      
-      if (results && results[0]) {
-        authStatus = results[0];
-        log.debug(`Authentication status for ${platform}:`, authStatus);
-      }
-      
-      // Get cookies after visiting the page
-      const cookies = await getPlatformCookies(platform);
-      
-      return {
-        authStatus,
-        cookies,
-        tabId: tab.id,
-        url: url
-      };
-    } catch (scriptError) {
-      log.error(`Error executing script in tab:`, scriptError);
-    } finally {
-      // Close the tab after we're done
-      try {
-        await browser.tabs.remove(tab.id);
-        log.debug(`Closed background tab: ${tab.id}`);
-      } catch (e) {
-        log.error(`Error closing tab: ${e}`);
-      }
+    if (results && results[0]) {
+      log.debug(`Authentication status for ${platform}:`, results[0]);
+      return results[0];
     }
     
     return null;
   } catch (error) {
-    log.error(`Error pre-fetching page:`, error);
+    log.error(`Error getting auth status: ${error}`);
     return null;
   }
 }
@@ -441,25 +356,24 @@ async function handleGetVideoInfo(data, port) {
   try {
     log.info("Getting video info for:", data.url);
     
-    // NEW: Try pre-fetching content if direct mode is enabled for this platform
-    let preFetchResult = null;
-    if (config.useDirectMode[data.platform]) {
-      log.info(`Using direct mode for ${data.platform}`);
-      preFetchResult = await preFetchPageContent(data.url, data.platform);
+    // Get basic authentication status
+    const authStatus = await getAuthStatus(data.platform);
+    if (authStatus) {
+      log.info(`Got auth status for ${data.platform}: logged in = ${authStatus.isLoggedIn}`);
+      data.authInfo = authStatus;
     }
-    
+
     // Prepare headers
     const headers = {
       "Content-Type": "application/json",
       "User-Agent": config.userAgents.desktop // Use a consistent user agent
     };
 
-    // Try to get cookies for the platform using the enhanced method
+    // Try to get cookies for the platform
     let cookieHeader = null;
     try {
       log.debug(`Collecting authentication cookies for ${data.platform}...`);
-      // Use either the cookies from pre-fetch or get fresh ones
-      cookieHeader = preFetchResult?.cookies || await getPlatformCookies(data.platform);
+      cookieHeader = await getPlatformCookies(data.platform);
       
       if (cookieHeader) {
         headers["Cookie"] = cookieHeader;
@@ -482,12 +396,6 @@ async function handleGetVideoInfo(data, port) {
     } catch (cookieError) {
       log.error("Error collecting cookies:", cookieError);
       // Continue without cookies
-    }
-
-    // If direct mode is enabled and we got auth status, add it to the request
-    if (preFetchResult?.authStatus) {
-      log.info(`Adding auth status from pre-fetch to request`);
-      data.authInfo = preFetchResult.authStatus;
     }
 
     log.info(`Sending request to ${config.API_URL}/download/info`);
@@ -578,26 +486,25 @@ async function handleDownloadVideo(data, port) {
         },
       });
     }
-    
-    // NEW: Try pre-fetching content if direct mode is enabled for this platform
-    let preFetchResult = null;
-    if (config.useDirectMode[data.platform]) {
-      log.info(`Using direct mode for ${data.platform}`);
-      preFetchResult = await preFetchPageContent(data.url, data.platform);
-    }
 
+    // Get basic authentication status
+    const authStatus = await getAuthStatus(data.platform);
+    if (authStatus) {
+      log.info(`Got auth status for ${data.platform}: logged in = ${authStatus.isLoggedIn}`);
+      data.authInfo = authStatus;
+    }
+    
     // Prepare headers
     const headers = {
       "Content-Type": "application/json",
       "User-Agent": config.userAgents.desktop // Use a consistent user agent
     };
 
-    // Try to get cookies for the platform using enhanced method
+    // Try to get cookies for the platform
     let cookieHeader = null;
     try {
       log.debug(`Collecting authentication cookies for ${data.platform}...`);
-      // Use either the cookies from pre-fetch or get fresh ones
-      cookieHeader = preFetchResult?.cookies || await getPlatformCookies(data.platform);
+      cookieHeader = await getPlatformCookies(data.platform);
       
       if (cookieHeader) {
         headers["Cookie"] = cookieHeader;
@@ -620,12 +527,6 @@ async function handleDownloadVideo(data, port) {
     } catch (cookieError) {
       log.error("Error collecting cookies:", cookieError);
       // Continue without cookies
-    }
-    
-    // If direct mode is enabled and we got auth status, add it to the request
-    if (preFetchResult?.authStatus) {
-      log.info(`Adding auth status from pre-fetch to request`);
-      data.authInfo = preFetchResult.authStatus;
     }
 
     log.info(`Sending download request to ${config.API_URL}/download/start`);
