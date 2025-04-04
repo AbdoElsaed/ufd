@@ -1,8 +1,15 @@
 # Universal File Downloader (UFD)
 
-A modern web application for downloading videos from various social media platforms with support for different formats and qualities. Built with Next.js, FastAPI, and yt-dlp.
+A browser extension for downloading videos from various social media platforms with support for different formats and qualities.
 
-## Features
+![UFD Logo](ufd-extension/icons/icon128.png)
+
+## Project Structure
+
+- **ufd-extension**: The browser extension (Firefox and Chrome)
+- **backend** (optional): The FastAPI backend for video processing
+
+## Extension Features
 
 - 🎥 Support for multiple platforms:
   - YouTube
@@ -20,178 +27,101 @@ A modern web application for downloading videos from various social media platfo
   - 720p
   - 480p
   - 360p
-- 🚀 Real-time progress tracking
-- 💨 Direct streaming without storage
-- 🎨 Modern, responsive UI
+- 🚀 Easy-to-use interface
+- 🔒 Respects privacy - all data stays in your browser
 
-## Tech Stack
+## Extension Installation
 
-### Frontend
-- Next.js 14
-- TypeScript
-- Tailwind CSS
-- Shadcn/ui
-- Lucide Icons
+### Firefox
 
-### Backend
-- FastAPI
+1. Download the latest release or clone this repository
+2. Open Firefox and navigate to `about:debugging`
+3. Click "This Firefox"
+4. Click "Load Temporary Add-on"
+5. Select the `manifest.json` file in the `ufd-extension` directory
+
+### Chrome
+
+1. Download the latest release or clone this repository
+2. Open Chrome and navigate to `chrome://extensions`
+3. Enable "Developer mode" in the top-right corner
+4. Click "Load unpacked"
+5. Select the `ufd-extension` directory
+
+## Using the Extension
+
+1. Navigate to a supported video site (YouTube, Facebook, etc.)
+2. Click the UFD extension icon to open the popup
+3. The extension will automatically detect the platform and fetch video information
+4. Select your preferred format and quality
+5. Click "Download" to start the download process
+
+## Backend Configuration
+
+By default, the extension uses our hosted backend at `https://ufd.onrender.com/api/v1`. **No local setup is required.**
+
+### Switching Between Backends
+
+The extension includes a built-in feature to toggle between the production and development backends:
+
+1. Double-click on the status text at the bottom of the popup
+2. Click the "Reload Extension" button that appears
+
+### Running a Local Backend (Optional)
+
+If you want to run your own backend:
+
+#### Prerequisites
 - Python 3.10+
+- FFmpeg
 - yt-dlp
-- FFmpeg
 
-## Prerequisites
+#### Setup
+1. Clone this repository
+2. Navigate to the backend directory:
+   ```bash
+   cd backend
+   ```
+3. Create a virtual environment:
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+4. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+5. Start the backend server:
+   ```bash
+   uvicorn main:app --host 0.0.0.0 --port 8000
+   ```
 
-- Python 3.10 or higher
-- Node.js 18 or higher
-- FFmpeg
-- Chrome browser (for Instagram downloads)
+## Troubleshooting
 
-## Installation
+- **YouTube extraction errors**: Sometimes YouTube updates their systems, which can break yt-dlp extraction. If you see errors like "Failed to extract player response," try:
+  - Waiting for a backend update (yt-dlp needs to be updated)
+  - Using a different video
+  - Making sure you're logged in to YouTube
+  
+- **Authentication issues**: For age-restricted or private videos, make sure you're logged in to the platform in your browser so the extension can use your cookies.
 
-### Backend Setup
+- **Download failures**: If downloads fail, check:
+  - Your internet connection
+  - That you're using a supported platform and URL format
+  - Browser console logs for detailed error information
+  - That your backend service is running (if using a local backend)
 
-1. Navigate to the backend directory:
-```bash
-cd backend
-```
+## Updating the Backend
 
-2. Create and activate a virtual environment:
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
+If you're running your own backend and experience yt-dlp extraction errors, you should update yt-dlp:
 
-3. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
+1. SSH into your server or open a terminal in your local backend environment
+2. Activate your virtual environment if you're using one
+3. Run: `pip install -U yt-dlp`
+4. Restart your backend server
 
-4. Create a `.env` file:
-```bash
-cp .env.example .env
-```
-
-### Frontend Setup
-
-1. Navigate to the frontend directory:
-```bash
-cd frontend
-```
-
-2. Install dependencies:
-```bash
-npm install
-```
-
-3. Create a `.env.local` file:
-```bash
-cp .env.example .env.local
-```
-
-## Running the Application
-
-### Start the Backend
-
-```bash
-cd backend
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-./run.sh  # On Windows: python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-### Start the Frontend
-
-```bash
-cd frontend
-npm run dev
-```
-
-The application will be available at `http://localhost:3000`
-
-## API Documentation
-
-Once the backend is running, you can access the API documentation at:
-- Swagger UI: `http://localhost:8000/api/v1/docs`
-- ReDoc: `http://localhost:8000/api/v1/redoc`
-
-## Environment Variables
-
-### Backend (.env)
-```
-API_V1_STR=/api/v1
-PROJECT_NAME=UFD Backend
-CORS_ORIGINS=["http://localhost:3000", "https://your-frontend-domain.com"]
-MAX_CONCURRENT_DOWNLOADS=2
-```
-
-### Frontend
-Development (.env.development):
-```
-NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
-```
-
-Production (.env.production):
-```
-NEXT_PUBLIC_API_URL=https://ufd-backend.onrender.com/api/v1
-```
-
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+For the hosted backend on Render, these updates are managed automatically.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Acknowledgments
-
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) for video downloading capabilities
-- [FFmpeg](https://ffmpeg.org/) for video processing
-- [Shadcn/ui](https://ui.shadcn.com/) for the beautiful UI components
-
-## Deployment
-
-### Backend Deployment (Render)
-
-1. Fork this repository to your GitHub account
-
-2. Create a new Web Service on Render:
-   - Connect your GitHub repository
-   - Choose "Docker" as the environment
-   - Select the free plan
-   - Set the following environment variables:
-     ```
-     API_V1_STR=/api/v1
-     PROJECT_NAME=UFD Backend
-     CORS_ORIGINS=["https://your-frontend-domain.com"]
-     MAX_CONCURRENT_DOWNLOADS=2
-     ```
-
-3. Deploy! Render will automatically build and deploy your container
-
-Note: The free tier has some limitations:
-- 512 MB RAM
-- Shared CPU
-- 15-minute request timeout
-- Container spins down after inactivity
-- Limited bandwidth
-
-For production use, consider:
-- Upgrading to a paid plan
-- Using alternative hosting (DigitalOcean, AWS, etc.)
-- Setting up a CDN for better performance
-
-### Frontend Deployment
-
-You can deploy the frontend to Vercel:
-
-1. Push your code to GitHub
-2. Import the project to Vercel
-3. Set the environment variables:
-   ```
-   NEXT_PUBLIC_API_URL=https://your-backend-domain.com/api/v1
-   ```
-4. Deploy! 
+MIT License 

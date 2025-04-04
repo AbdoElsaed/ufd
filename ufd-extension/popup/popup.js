@@ -326,6 +326,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       "Failed to connect to extension background script. Please try refreshing the popup."
     );
   }
+
+  // Setup backend status display
+  updateBackendStatusDisplay();
 });
 
 // Clean up on unload
@@ -614,6 +617,30 @@ function handleErrorMessage(message) {
     }
     
     elements.statusText.textContent = "Waiting for retry...";
+  } else if (error.includes("Failed to extract any player response") || error.includes("yt-dlp") || error.includes("DownloadError")) {
+    // This is a specific yt-dlp extraction error
+    showError(
+      "The backend is having trouble extracting this video. This may be due to YouTube's updates or restrictions. Please try the following:\n\n" + 
+      "1. Try a different video\n" +
+      "2. Make sure you're signed in to YouTube\n" +
+      "3. Try again later as the backend may need to be updated"
+    );
+
+    // Add a button to open the video in the browser
+    const openButton = document.createElement("button");
+    openButton.textContent = "Open video in browser";
+    openButton.className = "error-action";
+    openButton.onclick = () => browser.tabs.create({ url: state.currentUrl });
+    
+    // Insert after error text
+    const errorElement = elements.errorText;
+    if (errorElement.nextSibling) {
+      errorElement.parentNode.insertBefore(openButton, errorElement.nextSibling);
+    } else {
+      errorElement.parentNode.appendChild(openButton);
+    }
+    
+    elements.statusText.textContent = "Extraction error";
   } else if (error.includes("sign in") && state.detectedPlatform) {
     showError(
       `${state.detectedPlatform} requires authentication. Please make sure you are signed in to ${state.detectedPlatform} in your browser, then try again.`
@@ -717,6 +744,9 @@ function updateUI() {
   } else {
     elements.statusText.textContent = "Ready to download";
   }
+
+  // Update backend status display
+  updateBackendStatusDisplay();
 }
 
 // Hide element
@@ -727,4 +757,65 @@ function hideElement(element) {
 // Show element
 function showElement(element) {
   element.classList.remove("hidden");
+}
+
+// Setup backend status display
+function updateBackendStatusDisplay() {
+  try {
+    // Check localStorage for backend preference
+    const usingDevBackend = localStorage.getItem("ufd_use_dev_backend") === "true";
+    
+    // Get the status text element
+    const statusTextElement = document.getElementById("statusText");
+    if (statusTextElement) {
+      const currentBackend = usingDevBackend ? "Development (localhost:8000)" : "Production (Render)";
+      statusTextElement.textContent = `Status: ${state.connectionStatus || "Disconnected"} | Backend: ${currentBackend}`;
+      
+      // Add double-click handler to toggle backend
+      statusTextElement.title = "Double-click to toggle between production and development backend";
+      statusTextElement.style.cursor = "pointer";
+      
+      if (!statusTextElement.hasDBClickListener) {
+        statusTextElement.addEventListener("dblclick", toggleBackend);
+        statusTextElement.hasDBClickListener = true;
+      }
+    }
+  } catch (e) {
+    console.error("Error updating backend status:", e);
+  }
+}
+
+// Toggle between development and production backend
+function toggleBackend() {
+  try {
+    const currentSetting = localStorage.getItem("ufd_use_dev_backend") === "true";
+    localStorage.setItem("ufd_use_dev_backend", !currentSetting);
+    
+    const statusTextElement = document.getElementById("statusText");
+    if (statusTextElement) {
+      const newBackend = !currentSetting ? "Development (localhost:8000)" : "Production (Render)";
+      statusTextElement.textContent = `Status: ${state.connectionStatus || "Disconnected"} | Backend: ${newBackend}`;
+      
+      // Show reload instruction
+      showError("Backend changed to " + newBackend + ". Please reload the extension to apply this change.");
+      
+      // Create reload button
+      const reloadButton = document.createElement("button");
+      reloadButton.textContent = "Reload Extension";
+      reloadButton.className = "error-action";
+      reloadButton.addEventListener("click", () => {
+        browser.runtime.reload();
+      });
+      
+      // Add reload button
+      const errorElement = elements.errorText;
+      if (errorElement.nextSibling) {
+        errorElement.parentNode.insertBefore(reloadButton, errorElement.nextSibling);
+      } else {
+        errorElement.parentNode.appendChild(reloadButton);
+      }
+    }
+  } catch (e) {
+    console.error("Error toggling backend:", e);
+  }
 }

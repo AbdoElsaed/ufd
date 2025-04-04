@@ -166,26 +166,40 @@
       }
 
       .status {
-        font-size: 13px;
+        font-size: 11px;
         color: var(--text-secondary);
         margin-top: var(--spacing-xs);
-        min-height: 18px;
+        text-align: center;
+        font-style: italic;
+        cursor: help;
+      }
+      
+      .status:hover {
+        text-decoration: underline;
+        color: var(--accent-color);
       }
 
       .error {
         color: var(--error-color);
         font-size: 13px;
+        margin-top: var(--spacing-sm);
+        line-height: 1.4;
+        white-space: pre-line;
+        padding: var(--spacing-sm);
+        background-color: rgba(239, 68, 68, 0.1);
+        border-radius: var(--border-radius);
       }
 
       .error-action {
         margin-top: 8px;
-        padding: 6px 12px;
+        padding: 8px 12px;
         background-color: var(--bg-tertiary);
         color: var(--text-primary);
         border: none;
         border-radius: var(--border-radius);
         cursor: pointer;
         font-size: 12px;
+        font-weight: 500;
         transition: background-color 0.2s;
         display: block;
         width: 100%;

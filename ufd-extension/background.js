@@ -8,10 +8,11 @@ const config = {
     development: "http://localhost:8000/api/v1",
     production: "https://ufd.onrender.com/api/v1",
   },
-  // Always use development URL for testing
+  // Use production URL as default, but allow switching to development
   get API_URL() {
-    // For testing, always use development URL
-    return this.apiUrl.development;
+    // Check if we should be using the development URL
+    const useDev = localStorage.getItem("ufd_use_dev_backend") === "true";
+    return useDev ? this.apiUrl.development : this.apiUrl.production;
   },
   // Cookie domains to collect for each platform - more comprehensive for YouTube
   cookieDomains: {
@@ -350,13 +351,19 @@ async function handleGetVideoInfo(data, port) {
           }
         }
         
-        // Check for specific error messages
+        // Handle specific errors with friendly messages
         if (errorMessage.includes("Sign in to confirm you're not a bot")) {
+          log.warn("Authentication required error detected");
           errorMessage = "YouTube requires sign-in for this video. Please sign in to your YouTube account in the browser first.";
         } else if (errorMessage.includes("This video is private")) {
           errorMessage = "This video is private and cannot be accessed.";
         } else if (errorMessage.includes("Video unavailable")) {
           errorMessage = "This video is unavailable or may have been removed.";
+        } else if (errorMessage.includes("Failed to extract any player response") || 
+                   errorMessage.includes("yt-dlp") || 
+                   errorMessage.includes("DownloadError")) {
+          log.warn("yt-dlp extraction error detected:", errorMessage);
+          errorMessage = "Failed to extract video information. YouTube may have updated their systems. Please try a different video or try again later.";
         }
       } catch (e) {
         log.error("Error parsing error response:", e);
@@ -474,6 +481,21 @@ async function handleDownloadVideo(data, port) {
           } else if (typeof errorData.detail === "string") {
             errorMessage = errorData.detail;
           }
+        }
+        
+        // Handle specific errors with friendly messages
+        if (errorMessage.includes("Sign in to confirm you're not a bot")) {
+          log.warn("Authentication required error detected");
+          errorMessage = "YouTube requires sign-in for this video. Please sign in to your YouTube account in the browser first.";
+        } else if (errorMessage.includes("This video is private")) {
+          errorMessage = "This video is private and cannot be accessed.";
+        } else if (errorMessage.includes("Video unavailable")) {
+          errorMessage = "This video is unavailable or may have been removed.";
+        } else if (errorMessage.includes("Failed to extract any player response") || 
+                   errorMessage.includes("yt-dlp") || 
+                   errorMessage.includes("DownloadError")) {
+          log.warn("yt-dlp extraction error detected:", errorMessage);
+          errorMessage = "Failed to extract video information. YouTube may have updated their systems. Please try a different video or try again later.";
         }
       } catch (e) {
         log.error("Error parsing error response:", e);
