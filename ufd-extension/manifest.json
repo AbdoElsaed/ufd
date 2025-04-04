@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "UFD - Universal File Downloader",
+  "version": "1.0.0",
+  "description": "Download videos from the current tab",
+  "permissions": [
+    "activeTab",
+    "downloads",
+    "scripting",
+    "tabs",
+    "cookies"
+  ],
+  "host_permissions": [
+    "http://localhost:8000/*",
+    "https://ufd.onrender.com/*",
+    "https://*.youtube.com/*",
+    "https://*.facebook.com/*",
+    "https://*.twitter.com/*",
+    "https://*.instagram.com/*",
+    "https://*.tiktok.com/*",
+    "https://*.reddit.com/*"
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "scripts": ["browser-polyfill.js", "background.js"]
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "ufd-extension@example.com"
+    }
+  }
+} 

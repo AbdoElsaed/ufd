@@ -8,8 +8,8 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     PROJECT_NAME: str = "UFD Backend"
     
-    # CORS Settings - Default to Vercel deployment URL and localhost
-    CORS_ORIGINS: str = "https://ufd-kappa.vercel.app,http://localhost:3000"
+    # CORS Settings - Include extension URLs
+    CORS_ORIGINS: str = "https://ufd-kappa.vercel.app,http://localhost:3000,moz-extension://*,chrome-extension://*"
     
     # File Storage Settings
     DOWNLOAD_DIR: str = "downloads"

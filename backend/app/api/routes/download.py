@@ -6,6 +6,7 @@ from pydantic import BaseModel
 import logging
 from enum import Enum
 import traceback
+from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
 
@@ -44,26 +45,34 @@ class DownloadRequest(BaseModel):
 
 def get_format_string(format: Format, quality: Quality) -> Optional[str]:
     if format == Format.AUDIO:
-        return "bestaudio[ext=m4a]/bestaudio"
+        return "bestaudio[ext=mp4]/bestaudio[ext=mp4]/bestaudio"
 
     quality_map = {
-        Quality.HIGHEST: "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-        Quality.HD1080: "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best",
-        Quality.HD720: "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best",
-        Quality.SD480: "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best",
-        Quality.SD360: "bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360][ext=mp4]/best",
+        Quality.HIGHEST: "bestvideo[ext=mp4]+bestaudio[ext=mp4]/best[ext=mp4]/best",
+        Quality.HD1080: "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=mp4]/best[height<=1080][ext=mp4]/best",
+        Quality.HD720: "bestvideo[height<=720][ext=mp4]+bestaudio[ext=mp4]/best[height<=720][ext=mp4]/best",
+        Quality.SD480: "bestvideo[height<=480][ext=mp4]+bestaudio[ext=mp4]/best[height<=480][ext=mp4]/best",
+        Quality.SD360: "bestvideo[height<=360][ext=mp4]+bestaudio[ext=mp4]/best[height<=360][ext=mp4]/best",
     }
     return quality_map.get(quality)
 
 
 @router.post("/info")
-async def get_video_info(request: DownloadRequest, req: Request):
+async def get_video_info(
+    request: DownloadRequest,
+    req: Request,
+    cookie: Optional[str] = Header(None)
+):
     try:
         logger.info(f"Received info request for URL: {request.url}")
         logger.info(f"Request headers: {dict(req.headers)}")
         logger.info(f"Platform: {request.platform}, Format: {request.format}, Quality: {request.quality}")
         
-        info = await download_service.get_video_info(request.url)
+        info = await download_service.get_video_info(
+            request.url,
+            platform=request.platform,
+            cookies=cookie
+        )
         logger.info(f"Successfully retrieved info for URL: {request.url}")
         return info
     except Exception as e:
@@ -82,7 +91,8 @@ async def get_video_info(request: DownloadRequest, req: Request):
 async def start_download(
     request: DownloadRequest,
     background_tasks: BackgroundTasks,
-    req: Request
+    req: Request,
+    cookie: Optional[str] = Header(None)
 ):
     try:
         logger.info(f"Starting download for URL: {request.url}")
@@ -94,7 +104,12 @@ async def start_download(
             raise HTTPException(status_code=400, detail="Invalid format or quality combination")
         
         logger.info(f"Using format string: {format_string}")
-        result = await download_service.download_video(request.url, format_string)
+        result = await download_service.download_video(
+            request.url,
+            format_string,
+            platform=request.platform,
+            cookies=cookie
+        )
         logger.info(f"Download completed: {result['filename']}")
         
         async def cleanup_file():
@@ -117,18 +132,21 @@ async def start_download(
                 raise
         
         background_tasks.add_task(cleanup_file)
-        
+
+        # Always use mp4 content type
+        content_type = "video/mp4"
+
         headers = {
             "Content-Disposition": f'attachment; filename="{result["filename"]}"',
-            "Content-Type": result["content_type"],
-            "Access-Control-Expose-Headers": "Content-Disposition, Content-Type",
+            "Content-Type": content_type,
+            "Access-Control-Expose-Headers": "Content-Disposition, Content-Type"
         }
         
         logger.info(f"Streaming response with headers: {headers}")
         return StreamingResponse(
             iterfile(),
             headers=headers,
-            media_type=result["content_type"]
+            media_type=content_type
         )
         
     except Exception as e:
