@@ -97,6 +97,20 @@ const config = {
     twitter: false,
     instagram: false,
     tiktok: false
+  },
+  // NEW: Direct download mode will use browser to fetch the page first
+  useDirectMode: {
+    youtube: true,
+    reddit: true,
+    facebook: false,
+    twitter: false,
+    instagram: false,
+    tiktok: false
+  },
+  // User agents to use for requests to make them look more legitimate
+  userAgents: {
+    desktop: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    mobile: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
   }
 };
 
@@ -342,20 +356,110 @@ async function getPlatformCookies(platform) {
   }
 }
 
+// NEW FUNCTION: Direct page access to verify authentication and warm up session
+async function preFetchPageContent(url, platform) {
+  try {
+    log.info(`Pre-fetching page content for ${platform}: ${url}`);
+    
+    // Only try for supported platforms
+    if (!config.useDirectMode[platform]) {
+      log.debug(`Direct mode not enabled for ${platform}, skipping pre-fetch`);
+      return null;
+    }
+    
+    // Create a new tab but don't switch to it
+    const tab = await browser.tabs.create({
+      url: url,
+      active: false // Keep it in the background
+    });
+    
+    log.debug(`Created background tab with ID: ${tab.id}`);
+    
+    // Wait for the page to load
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    
+    // Execute script to check if we're properly authenticated
+    let authStatus = null;
+    
+    try {
+      const results = await browser.tabs.executeScript(tab.id, {
+        code: `
+          // Return authentication information
+          (function() {
+            const info = {};
+            
+            if (window.location.host.includes('youtube.com')) {
+              info.isLoggedIn = !!document.querySelector('ytd-masthead #avatar-btn');
+              info.isAgeRestricted = !!document.querySelector('.ytd-player-error-message-renderer');
+              info.title = document.title;
+              info.videoElement = !!document.querySelector('video');
+            } else if (window.location.host.includes('reddit.com')) {
+              info.isLoggedIn = !!document.querySelector('header [data-testid="reddit-avatar"]');
+              info.title = document.title;
+            }
+            
+            return info;
+          })();
+        `
+      });
+      
+      if (results && results[0]) {
+        authStatus = results[0];
+        log.debug(`Authentication status for ${platform}:`, authStatus);
+      }
+      
+      // Get cookies after visiting the page
+      const cookies = await getPlatformCookies(platform);
+      
+      return {
+        authStatus,
+        cookies,
+        tabId: tab.id,
+        url: url
+      };
+    } catch (scriptError) {
+      log.error(`Error executing script in tab:`, scriptError);
+    } finally {
+      // Close the tab after we're done
+      try {
+        await browser.tabs.remove(tab.id);
+        log.debug(`Closed background tab: ${tab.id}`);
+      } catch (e) {
+        log.error(`Error closing tab: ${e}`);
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    log.error(`Error pre-fetching page:`, error);
+    return null;
+  }
+}
+
 // Handler for getting video information
 async function handleGetVideoInfo(data, port) {
   try {
     log.info("Getting video info for:", data.url);
     
+    // NEW: Try pre-fetching content if direct mode is enabled for this platform
+    let preFetchResult = null;
+    if (config.useDirectMode[data.platform]) {
+      log.info(`Using direct mode for ${data.platform}`);
+      preFetchResult = await preFetchPageContent(data.url, data.platform);
+    }
+    
     // Prepare headers
     const headers = {
       "Content-Type": "application/json",
+      "User-Agent": config.userAgents.desktop // Use a consistent user agent
     };
 
     // Try to get cookies for the platform using the enhanced method
+    let cookieHeader = null;
     try {
       log.debug(`Collecting authentication cookies for ${data.platform}...`);
-      const cookieHeader = await getPlatformCookies(data.platform);
+      // Use either the cookies from pre-fetch or get fresh ones
+      cookieHeader = preFetchResult?.cookies || await getPlatformCookies(data.platform);
       
       if (cookieHeader) {
         headers["Cookie"] = cookieHeader;
@@ -366,6 +470,8 @@ async function handleGetVideoInfo(data, port) {
         if (data.platform === 'youtube') {
           headers["Referer"] = "https://www.youtube.com/";
           headers["Origin"] = "https://www.youtube.com";
+          headers["X-YouTube-Client-Name"] = "1";
+          headers["X-YouTube-Client-Version"] = "2.20240401.00.00";
         } else if (data.platform === 'reddit') {
           headers["Referer"] = "https://www.reddit.com/";
           headers["Origin"] = "https://www.reddit.com";
@@ -376,6 +482,12 @@ async function handleGetVideoInfo(data, port) {
     } catch (cookieError) {
       log.error("Error collecting cookies:", cookieError);
       // Continue without cookies
+    }
+
+    // If direct mode is enabled and we got auth status, add it to the request
+    if (preFetchResult?.authStatus) {
+      log.info(`Adding auth status from pre-fetch to request`);
+      data.authInfo = preFetchResult.authStatus;
     }
 
     log.info(`Sending request to ${config.API_URL}/download/info`);
@@ -466,16 +578,26 @@ async function handleDownloadVideo(data, port) {
         },
       });
     }
+    
+    // NEW: Try pre-fetching content if direct mode is enabled for this platform
+    let preFetchResult = null;
+    if (config.useDirectMode[data.platform]) {
+      log.info(`Using direct mode for ${data.platform}`);
+      preFetchResult = await preFetchPageContent(data.url, data.platform);
+    }
 
     // Prepare headers
     const headers = {
       "Content-Type": "application/json",
+      "User-Agent": config.userAgents.desktop // Use a consistent user agent
     };
 
     // Try to get cookies for the platform using enhanced method
+    let cookieHeader = null;
     try {
       log.debug(`Collecting authentication cookies for ${data.platform}...`);
-      const cookieHeader = await getPlatformCookies(data.platform);
+      // Use either the cookies from pre-fetch or get fresh ones
+      cookieHeader = preFetchResult?.cookies || await getPlatformCookies(data.platform);
       
       if (cookieHeader) {
         headers["Cookie"] = cookieHeader;
@@ -486,6 +608,8 @@ async function handleDownloadVideo(data, port) {
         if (data.platform === 'youtube') {
           headers["Referer"] = "https://www.youtube.com/";
           headers["Origin"] = "https://www.youtube.com";
+          headers["X-YouTube-Client-Name"] = "1";
+          headers["X-YouTube-Client-Version"] = "2.20240401.00.00";
         } else if (data.platform === 'reddit') {
           headers["Referer"] = "https://www.reddit.com/";
           headers["Origin"] = "https://www.reddit.com";
@@ -496,6 +620,12 @@ async function handleDownloadVideo(data, port) {
     } catch (cookieError) {
       log.error("Error collecting cookies:", cookieError);
       // Continue without cookies
+    }
+    
+    // If direct mode is enabled and we got auth status, add it to the request
+    if (preFetchResult?.authStatus) {
+      log.info(`Adding auth status from pre-fetch to request`);
+      data.authInfo = preFetchResult.authStatus;
     }
 
     log.info(`Sending download request to ${config.API_URL}/download/start`);

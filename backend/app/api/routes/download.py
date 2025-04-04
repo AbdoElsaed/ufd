@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Header, Request
 from fastapi.responses import StreamingResponse
-from typing import Optional
+from typing import Optional, Dict, Any
 from ...services.download import DownloadService
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import logging
 from enum import Enum
 import traceback
@@ -41,6 +41,7 @@ class DownloadRequest(BaseModel):
     platform: Platform
     format: Format
     quality: Quality
+    authInfo: Optional[Dict[str, Any]] = Field(default=None, description="Authentication information from the browser")
 
 
 def get_format_string(format: Format, quality: Quality) -> Optional[str]:
@@ -68,10 +69,15 @@ async def get_video_info(
         logger.info(f"Request headers: {dict(req.headers)}")
         logger.info(f"Platform: {request.platform}, Format: {request.format}, Quality: {request.quality}")
         
+        # Log if we received browser auth info
+        if request.authInfo:
+            logger.info(f"Received authentication info from browser: {request.authInfo}")
+        
         info = await download_service.get_video_info(
             request.url,
             platform=request.platform,
-            cookies=cookie
+            cookies=cookie,
+            auth_info=request.authInfo
         )
         logger.info(f"Successfully retrieved info for URL: {request.url}")
         return info
@@ -105,6 +111,10 @@ async def start_download(
         logger.info(f"Request headers: {dict(req.headers)}")
         logger.info(f"Platform: {request.platform}, Format: {request.format}, Quality: {request.quality}")
         
+        # Log if we received browser auth info
+        if request.authInfo:
+            logger.info(f"Received authentication info from browser: {request.authInfo}")
+        
         format_string = get_format_string(request.format, request.quality)
         if not format_string:
             raise HTTPException(status_code=400, detail="Invalid format or quality combination")
@@ -114,7 +124,8 @@ async def start_download(
             request.url,
             format_string,
             platform=request.platform,
-            cookies=cookie
+            cookies=cookie,
+            auth_info=request.authInfo
         )
         logger.info(f"Download completed: {result['filename']}")
         

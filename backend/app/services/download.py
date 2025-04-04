@@ -57,12 +57,12 @@ MOBILE_USER_AGENTS = [
 
 # Platform-specific cookie domains
 PLATFORM_DOMAINS = {
-    'youtube': ['.youtube.com', '.google.com'],
-    'facebook': ['.facebook.com', '.fb.com'],
-    'twitter': ['.twitter.com', '.x.com'],
-    'instagram': ['.instagram.com', '.cdninstagram.com'],
-    'tiktok': ['.tiktok.com', '.tiktokcdn.com'],
-    'reddit': ['.reddit.com', '.redd.it']
+    'youtube': ['.youtube.com', '.google.com', 'accounts.google.com', 'www.youtube.com', 'youtube.com'],
+    'facebook': ['.facebook.com', '.fb.com', 'www.facebook.com', 'facebook.com', 'm.facebook.com'],
+    'twitter': ['.twitter.com', '.x.com', 'twitter.com', 'www.twitter.com', 'x.com'],
+    'instagram': ['.instagram.com', '.cdninstagram.com', 'www.instagram.com', 'instagram.com'],
+    'tiktok': ['.tiktok.com', '.tiktokcdn.com', 'www.tiktok.com', 'tiktok.com'],
+    'reddit': ['.reddit.com', '.redd.it', 'www.reddit.com', 'reddit.com', 'old.reddit.com']
 }
 
 class DownloadService:
@@ -73,8 +73,57 @@ class DownloadService:
         self.download_dir.mkdir(exist_ok=True)
         self.semaphore = asyncio.Semaphore(2)
 
-    def _create_cookies_file(self, cookies: str, platform: str = None) -> str:
+    def _process_auth_info(self, auth_info: Optional[Dict[str, Any]], platform: str = None) -> Dict[str, Any]:
+        """Process authentication information from the browser extension."""
+        if not auth_info:
+            return {}
+        
+        result = {}
+        
+        # Log the auth info we received (without exposing sensitive values)
+        logger.info(f"Processing auth info for platform: {platform}")
+        logger.info(f"Auth info keys: {list(auth_info.keys())}")
+        
+        # Extract authentication status
+        if 'isLoggedIn' in auth_info:
+            result['is_authenticated'] = auth_info['isLoggedIn']
+            logger.info(f"User is authenticated: {result['is_authenticated']}")
+        
+        # Extract additional platform-specific information
+        if platform == 'youtube':
+            if 'isAgeRestricted' in auth_info:
+                result['is_age_restricted'] = auth_info['isAgeRestricted']
+                logger.info(f"Content is age restricted: {result['is_age_restricted']}")
+            
+            if 'videoElement' in auth_info:
+                result['has_video_element'] = auth_info['videoElement']
+                logger.info(f"Page has video element: {result['has_video_element']}")
+        
+        # Extract page title if available
+        if 'title' in auth_info:
+            result['page_title'] = auth_info['title']
+            logger.info(f"Page title: {result['page_title']}")
+        
+        # Extract cookies if they're provided directly in the auth_info
+        if 'cookies' in auth_info and auth_info['cookies']:
+            result['cookies'] = auth_info['cookies']
+            logger.info(f"Received {len(auth_info['cookies'].split(';'))} cookies in auth_info")
+        
+        # Extract user agent if provided
+        if 'userAgent' in auth_info:
+            result['user_agent'] = auth_info['userAgent']
+            logger.info(f"Using custom user agent from auth_info")
+        
+        return result
+
+    def _create_cookies_file(self, cookies: str, platform: str = None, auth_info: Optional[Dict[str, Any]] = None) -> str:
         """Create a temporary cookies.txt file from browser cookies."""
+        # Process any cookies from auth_info
+        processed_auth = self._process_auth_info(auth_info, platform)
+        if 'cookies' in processed_auth and not cookies:
+            cookies = processed_auth['cookies']
+            logger.info(f"Using cookies from auth_info instead of header cookies")
+        
         if not cookies:
             logger.warning("No cookies provided to create cookie file")
             return None
@@ -162,10 +211,13 @@ class DownloadService:
             logger.error(f"Error creating cookies file: {e}")
             return None
 
-    def _get_yt_dlp_opts(self, format_id: str = None, cookies: str = None, platform: str = None) -> Dict[str, Any]:
+    def _get_yt_dlp_opts(self, format_id: str = None, cookies: str = None, platform: str = None, auth_info: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Get yt-dlp options based on format and cookies."""
-        # Get a random mobile user agent
-        user_agent = random.choice(MOBILE_USER_AGENTS)
+        # Process auth info from extension
+        processed_auth = self._process_auth_info(auth_info, platform)
+        
+        # Get user agent - either from auth_info or random mobile user agent
+        user_agent = processed_auth.get('user_agent', random.choice(MOBILE_USER_AGENTS))
         
         # Common headers that make requests look more legitimate
         headers = {
@@ -177,12 +229,11 @@ class DownloadService:
             'Sec-Fetch-User': '?1',
             'Sec-Fetch-Dest': 'document',
             'User-Agent': user_agent,
-            'Origin': 'https://www.youtube.com',
             'DNT': '1',
             'Connection': 'keep-alive',
         }
 
-        # Add platform-specific referer
+        # Add platform-specific referer and origin
         if platform:
             referers = {
                 'youtube': 'https://www.youtube.com/',
@@ -192,7 +243,16 @@ class DownloadService:
                 'tiktok': 'https://www.tiktok.com/',
                 'reddit': 'https://www.reddit.com/'
             }
+            origins = {
+                'youtube': 'https://www.youtube.com',
+                'facebook': 'https://www.facebook.com',
+                'twitter': 'https://twitter.com',
+                'instagram': 'https://www.instagram.com',
+                'tiktok': 'https://www.tiktok.com',
+                'reddit': 'https://www.reddit.com'
+            }
             headers['Referer'] = referers.get(platform, '')
+            headers['Origin'] = origins.get(platform, '')
 
         if cookies:
             headers['Cookie'] = cookies
@@ -264,7 +324,7 @@ class DownloadService:
 
         # Create cookies file from browser cookies if provided
         if cookies:
-            cookies_file = self._create_cookies_file(cookies, platform)
+            cookies_file = self._create_cookies_file(cookies, platform, auth_info)
             if cookies_file:
                 opts["cookiefile"] = cookies_file
                 logger.info(f"Using cookies file: {cookies_file}")
@@ -273,10 +333,14 @@ class DownloadService:
 
         return opts
 
-    async def get_video_info(self, url: str, platform: str = None, cookies: str = None) -> Dict[str, Any]:
+    async def get_video_info(self, url: str, platform: str = None, cookies: str = None, auth_info: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Get video information."""
         try:
             logger.info(f"Getting video info for {platform} URL: {url[:30]}...")
+            
+            # Process authentication info from the extension
+            processed_auth = self._process_auth_info(auth_info, platform)
+            logger.info(f"Processed auth info: {json.dumps({k: '...' for k in processed_auth.keys()})}")
             
             # Try to parse URL to check if it's valid
             try:
@@ -288,7 +352,7 @@ class DownloadService:
             except Exception as e:
                 logger.warning(f"URL validation issue: {e}")
             
-            yt_dlp_opts = self._get_yt_dlp_opts(cookies=cookies, platform=platform)
+            yt_dlp_opts = self._get_yt_dlp_opts(cookies=cookies, platform=platform, auth_info=auth_info)
             
             try:
                 with yt_dlp.YoutubeDL(yt_dlp_opts) as ydl:
@@ -325,7 +389,8 @@ class DownloadService:
                                     "Please try a different video or wait for the backend to be updated. "
                                     "Error details: Failed to extract player response")
                 elif "Sign in to confirm you're not a bot" in error_message:
-                    error_message = "YouTube requires you to sign in to access this video. Please sign in to your YouTube account in the browser."
+                    auth_status = "authenticated" if processed_auth.get('is_authenticated', False) else "not authenticated"
+                    error_message = f"YouTube requires you to sign in to access this video. Please sign in to your YouTube account in the browser. (Current status: {auth_status})"
                 elif "Private video" in error_message:
                     error_message = "This is a private video. You need to be logged in with an account that has access to this video."
                 elif "This video is not available" in error_message:
@@ -348,17 +413,22 @@ class DownloadService:
                     logger.warning(f"Failed to delete temporary file {file}: {e}")
 
     async def download_video(
-        self, url: str, format_id: Optional[str] = None, platform: str = None, cookies: str = None
+        self, url: str, format_id: Optional[str] = None, platform: str = None, cookies: str = None, auth_info: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Download video with the specified format."""
         async with self.semaphore:
             try:
                 logger.info(f"Starting download for {platform} URL: {url[:30]}...")
+                
+                # Process authentication info from the extension
+                processed_auth = self._process_auth_info(auth_info, platform)
+                logger.info(f"Processed auth info for download: {json.dumps({k: '...' for k in processed_auth.keys()})}")
+                
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 temp_file = self.temp_dir / f"download_{timestamp}.mp4"
 
                 # Create options for yt-dlp
-                opts = self._get_yt_dlp_opts(format_id, cookies=cookies, platform=platform)
+                opts = self._get_yt_dlp_opts(format_id, cookies=cookies, platform=platform, auth_info=auth_info)
                 opts.update({
                     "outtmpl": str(temp_file),
                     "quiet": False,
@@ -417,7 +487,8 @@ class DownloadService:
                             error_message = ("YouTube extraction failed. This is usually caused by YouTube updates that require yt-dlp to be updated. "
                                             "Please try a different video or wait for the backend to be updated.")
                         elif "Sign in to confirm you're not a bot" in error_message:
-                            error_message = "YouTube requires you to sign in to access this video. Please sign in to your YouTube account in the browser."
+                            auth_status = "authenticated" if processed_auth.get('is_authenticated', False) else "not authenticated"
+                            error_message = f"YouTube requires you to sign in to access this video. Please sign in to your YouTube account in the browser. (Current status: {auth_status})"
                         
                         # Include relevant info about the environment
                         is_docker = os.environ.get('RENDER') == 'true'
