@@ -617,13 +617,18 @@ function handleErrorMessage(message) {
     }
     
     elements.statusText.textContent = "Waiting for retry...";
-  } else if (error.includes("Failed to extract any player response") || error.includes("yt-dlp") || error.includes("DownloadError")) {
+  } else if (
+    error.includes("Failed to extract any player response") || 
+    error.includes("YouTube extraction failed") || 
+    error.includes("yt-dlp") || 
+    error.includes("DownloadError")
+  ) {
     // This is a specific yt-dlp extraction error
     showError(
-      "The backend is having trouble extracting this video. This may be due to YouTube's updates or restrictions. Please try the following:\n\n" + 
+      "YouTube extraction failed. YouTube has likely updated their systems which requires the backend to be updated.\n\nWhat you can do:\n" + 
       "1. Try a different video\n" +
       "2. Make sure you're signed in to YouTube\n" +
-      "3. Try again later as the backend may need to be updated"
+      "3. Wait for the backend to be updated with the latest yt-dlp version"
     );
 
     // Add a button to open the video in the browser
@@ -632,11 +637,19 @@ function handleErrorMessage(message) {
     openButton.className = "error-action";
     openButton.onclick = () => browser.tabs.create({ url: state.currentUrl });
     
-    // Insert after error text
+    // Add a button to try a different backend
+    const switchBackendButton = document.createElement("button");
+    switchBackendButton.textContent = "Try different backend";
+    switchBackendButton.className = "error-action";
+    switchBackendButton.onclick = toggleBackend;
+    
+    // Insert buttons after error text
     const errorElement = elements.errorText;
     if (errorElement.nextSibling) {
       errorElement.parentNode.insertBefore(openButton, errorElement.nextSibling);
+      errorElement.parentNode.insertBefore(switchBackendButton, errorElement.nextSibling);
     } else {
+      errorElement.parentNode.appendChild(switchBackendButton);
       errorElement.parentNode.appendChild(openButton);
     }
     

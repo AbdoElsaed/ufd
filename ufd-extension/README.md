@@ -92,6 +92,9 @@ To switch back to the hosted backend:
   - Waiting for a backend update (yt-dlp needs to be updated)
   - Using a different video
   - Making sure you're logged in to YouTube
+  - Switching backends using the double-click toggle (see below)
+  
+  This error occurs when YouTube changes their website structure, which happens periodically. The backend needs to update its yt-dlp library to handle these changes. This is a common issue with all YouTube downloaders.
   
 - **Authentication issues**: For age-restricted or private videos, make sure you're logged in to the platform in your browser so the extension can use your cookies.
 

@@ -102,6 +102,15 @@ If you want to run your own backend:
   - Waiting for a backend update (yt-dlp needs to be updated)
   - Using a different video
   - Making sure you're logged in to YouTube
+  - Switching between production and development backends using the toggle in the extension popup
+  
+  For advanced users running their own backend, you can update yt-dlp yourself:
+  ```bash
+  cd backend
+  python update_ytdlp.py
+  # OR manually:
+  pip install -U yt-dlp
+  ```
   
 - **Authentication issues**: For age-restricted or private videos, make sure you're logged in to the platform in your browser so the extension can use your cookies.
 
@@ -117,10 +126,10 @@ If you're running your own backend and experience yt-dlp extraction errors, you 
 
 1. SSH into your server or open a terminal in your local backend environment
 2. Activate your virtual environment if you're using one
-3. Run: `pip install -U yt-dlp`
+3. Run the update script: `python update_ytdlp.py`
 4. Restart your backend server
 
-For the hosted backend on Render, these updates are managed automatically.
+For the hosted backend on Render, these updates are managed automatically, but may take some time. The error "Failed to extract any player response" typically means YouTube has updated their website structure and yt-dlp needs to be updated to handle the changes. This is a common issue with YouTube downloaders.
 
 ## License
 

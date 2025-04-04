@@ -78,10 +78,16 @@ async def get_video_info(
     except Exception as e:
         logger.error(f"Error getting video info: {str(e)}")
         logger.error(f"Traceback: {traceback.format_exc()}")
+        
+        # Special handling for yt-dlp extraction errors
+        error_message = str(e)
+        if "Failed to extract any player response" in error_message:
+            error_message = "YouTube extraction failed. This is usually caused by YouTube updates that require yt-dlp to be updated. Please try a different video or wait for a backend update."
+        
         raise HTTPException(
             status_code=400,
             detail={
-                "error": str(e),
+                "error": error_message,
                 "traceback": traceback.format_exc() if not str(e).startswith("HTTP Error") else None
             }
         )
@@ -152,10 +158,16 @@ async def start_download(
     except Exception as e:
         logger.error(f"Error starting download: {str(e)}")
         logger.error(f"Traceback: {traceback.format_exc()}")
+        
+        # Special handling for yt-dlp extraction errors
+        error_message = str(e)
+        if "Failed to extract any player response" in error_message:
+            error_message = "YouTube extraction failed. This is usually caused by YouTube updates that require yt-dlp to be updated. Please try a different video or wait for a backend update."
+        
         raise HTTPException(
             status_code=400,
             detail={
-                "error": str(e),
+                "error": error_message,
                 "traceback": traceback.format_exc() if not str(e).startswith("HTTP Error") else None
             }
         )

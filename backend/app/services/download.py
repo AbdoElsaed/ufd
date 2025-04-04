@@ -8,8 +8,44 @@ import os
 from datetime import datetime
 import random
 import tempfile
+import subprocess
+import sys
+import pkg_resources
 
 logger = logging.getLogger(__name__)
+
+# Check yt-dlp version at startup
+def check_ytdlp_version():
+    try:
+        current_version = pkg_resources.get_distribution("yt-dlp").version
+        logger.info(f"Current yt-dlp version: {current_version}")
+        
+        # Try to get the latest version from PyPI
+        try:
+            import urllib.request
+            import json
+            
+            url = "https://pypi.org/pypi/yt-dlp/json"
+            with urllib.request.urlopen(url, timeout=5) as response:
+                data = json.loads(response.read().decode())
+                latest_version = data["info"]["version"]
+                
+                if current_version != latest_version:
+                    logger.warning(f"yt-dlp version {current_version} is outdated! Latest is {latest_version}")
+                    logger.warning("You may encounter extraction errors with YouTube. Consider updating with: python -m pip install -U yt-dlp")
+                    return False
+                else:
+                    logger.info(f"yt-dlp is up to date (version {current_version})")
+                    return True
+        except Exception as e:
+            logger.warning(f"Could not check for yt-dlp updates: {e}")
+            return None
+    except Exception as e:
+        logger.error(f"Error checking yt-dlp version: {e}")
+        return None
+
+# Run the version check
+is_ytdlp_updated = check_ytdlp_version()
 
 # Mobile user agents have better success rates
 MOBILE_USER_AGENTS = [
